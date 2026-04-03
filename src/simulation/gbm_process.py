@@ -1,4 +1,3 @@
-
 import numpy as np
 from typing import Any
 from .base_process import BaseProcess
