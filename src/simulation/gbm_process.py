@@ -24,10 +24,10 @@ class GBMProcess(BaseProcess):
         """
         super().__init__(simulation_cfg)
 
-        self.mu = float(simulation_cfg["mu"])
-        self.sigma = float(simulation_cfg["sigma"])
+        self.mu = float(simulation_cfg.get("gbm").get("mu"))
+        self.sigma = float(simulation_cfg.get("gbm").get("sigma"))
 
-    def _simulate_one_path(self) -> dict[str, np.ndarray]:
+    def simulate_one_path(self) -> dict[str, np.ndarray]:
         """
         Simulate one path of the GBM process.
 

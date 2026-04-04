@@ -44,7 +44,7 @@ class SABRProcess(BaseProcess):
             - "S": the simulated price path of the SABR process
             - "sigma": the simulated volatility path of the SABR process
         """
-        z1, z2 = self._correlated_normals(self.rng, self.rho)
+        z1, z2 = self._correlated_normals(self.rho)
 
         S = self._init_1d_path(self.S0)
         sigma = self._init_1d_path(self.sigma0)

@@ -1,17 +1,30 @@
-from src.simulation import SABRProcess
+import logging
+from rich.logging import RichHandler
+from src.utils.helpers import json_to_dict
+from src.orchestrator import Orchestrator
+from src.utils.enums import AgentType, ProcessType, BenchmarkType
 
-sabr_cfg = {
-    "maturity": 1.0,
-    "n_steps": 252,
-    "S0": 100.0,
-    "mu": 0.05,
-    "sigma0": 0.20,
-    "nu": 0.60,
-    "rho": -0.40,
-}
 
-process = SABRProcess(sabr_cfg)
-paths = process.simulate_paths(n_paths=10)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    datefmt="[%Y-%m-%d %H:%M:%S]",
+    handlers=[RichHandler(rich_tracebacks=True, markup=True)],
+    force=True,
+)
+logger = logging.getLogger(__name__)
+logger.info("--- Start ---")
 
-print(paths["S"].shape)
-print(paths["sigma"].shape)
+config = json_to_dict("config.json")
+runner = Orchestrator(
+    config=config,
+    process_type=ProcessType.GBM,
+    agent_type=AgentType.DQN,
+    benchmark_type=BenchmarkType.BsDelta
+)
+
+# runner.train()
+# runner.test()
+runner.test_benchmark()
+
+logger.info("--- END ---")

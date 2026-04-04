@@ -26,9 +26,7 @@ class BaseProcess(ABC):
             Configuration dictionary containing the base information for the simulation and model-specific parameters.
         """
         self.cfg = simulation_cfg
-
-        seed = int(simulation_cfg.get("seed", 42))
-        self.rng = np.random.default_rng(seed)
+        self.rng = np.random.default_rng()
 
         self.T = float(simulation_cfg["maturity"])
         self.n_steps = int(simulation_cfg["n_steps"])
@@ -93,7 +91,6 @@ class BaseProcess(ABC):
 
     def _correlated_normals(
         self,
-        rng: np.random.Generator,
         rho: float,
         size: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -115,7 +112,7 @@ class BaseProcess(ABC):
             Two arrays of shape (size,) containing the correlated standard normal samples.
         """
         size = self.n_steps if size is None else size
-        z1 = rng.standard_normal(size)
-        z_indep = rng.standard_normal(size)
+        z1 = self.rng.standard_normal(size)
+        z_indep = self.rng.standard_normal(size)
         z2 = rho * z1 + np.sqrt(1.0 - rho**2) * z_indep
         return z1, z2

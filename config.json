@@ -1,0 +1,59 @@
+{
+    "simulation":
+    {
+        "n_steps": 100,
+        "maturity": 1.0,
+        "S0": 100.0,
+        "gbm":
+        {
+            "mu": 0.05,
+            "sigma": 0.2
+        },
+        "sabr":
+        {
+            "mu": 0.05,
+            "sigma0": 0.2,
+            "nu": 0.3,
+            "rho": -0.5
+        },
+        "svj":
+        {
+            "mu": 0.05,
+            "v0": 0.04,
+            "kappa": 1.0,
+            "theta": 0.04,
+            "xi": 0.5,
+            "rho": -0.5,
+            "jump_intensity": 1.0,
+            "jump_mean": -0.02,
+            "jump_std": 0.05
+        }
+    },
+    "hedging_env":
+    {
+        "position_sign": -1.0,
+        "transaction_cost": 0.01
+    },
+    "training_schedule":
+    {
+        "train_episodes": 500,
+        "eval_episodes": 200,
+        "update_frequency": 10
+    },
+    "hedging_agent":
+    {
+        "exploration_rate_start": 1.0,
+        "exploration_rate_end": 0.05,
+        "exploration_rate_decay": 0.995,
+        "learning_rate": 0.0005,
+        "discount_factor": 1.0,
+        "learning_bactch_size": 128,
+        "action_grid_size": 11
+    },
+    "derivative":
+    {
+        "strike": 100.0,
+        "rf_rate": 0.01,
+        "div_rate": 0.01
+    }
+}

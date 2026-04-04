@@ -61,7 +61,7 @@ class SVJProcess(BaseProcess):
             - "variance": the simulated variance path of the SVJ process
             - "jump_count": the simulated jump count path of the SVJ process
         """
-        z1, z2 = self._correlated_normals(self.rng, self.rho)
+        z1, z2 = self._correlated_normals(self.rho)
 
         S = self._init_1d_path(self.S0)
         variance = self._init_1d_path(self.v0)
