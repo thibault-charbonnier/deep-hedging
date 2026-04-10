@@ -1,7 +1,7 @@
 {
   "simulation": {
     "n_steps": 60,
-    "maturity": 1.0,
+    "maturity": 0.25,
     "S0": 100.0,
     "gbm": { "mu": 0.05, "sigma": 0.2 },
     "sabr": { "mu": 0.05, "sigma0": 0.2, "nu": 0.6, "rho": -0.4 },
@@ -16,17 +16,17 @@
     "transaction_cost": 0.01
   },
   "training_schedule": {
-    "train_episodes": 5000,
-    "eval_episodes": 1000
+    "train_episodes": 10000,
+    "eval_episodes": 2000
   },
   "hedging_agent": {
     "discount_factor": 1.0,
     "learning_rate": 0.0003,
     "actor_learning_rate": 0.0001,
     "critic_learning_rate": 0.001,
-    "learning_batch_size": 128,
-    "replay_capacity": 100000,
-    "min_buffer_size": 1024,
+    "learning_batch_size": 256,
+    "replay_capacity": 200000,
+    "min_buffer_size": 2048,
     "hidden_dims": [128, 128],
     "target_update_freq": 100,
     "action_grid_size": 21,
