@@ -311,6 +311,55 @@ def plot_agents(df, title, fn="agents.png"):
     fig.tight_layout(); _sv(fig,fn)
 
 
+def plot_sabr_benchmarks(df, title, fn="sabr_benchmarks.png"):
+    """Compare RL, practitioner delta and Bartlett delta across rebalancing frequencies."""
+    x = np.arange(len(df)); w = 0.25; lam = 1.5
+    rl_y = df["RL Mean%"] + lam * df["RL Std%"]
+    pr_y = df["Practitioner Δ Mean%"] + lam * df["Practitioner Δ Std%"]
+    ba_y = df["Bartlett Δ Mean%"] + lam * df["Bartlett Δ Std%"]
+    fig, ax = plt.subplots(figsize=(12, 5))
+    ax.bar(x - w, pr_y, w, label="Practitioner Δ Y(0)", color="salmon", edgecolor="white")
+    ax.bar(x,     ba_y, w, label="Bartlett Δ Y(0)",    color="#f39c12", edgecolor="white")
+    ax.bar(x + w, rl_y, w, label="RL Y(0)",            color="steelblue", edgecolor="white")
+    ax.set_xticks(x); ax.set_xticklabels(df["Rebal"])
+    ax.set(ylabel="Y(0) % of V₀", title=title)
+    ax.legend(); ax.grid(True, alpha=.3, axis="y")
+    fig.tight_layout(); _sv(fig, fn)
+
+
+def plot_process_comparison(df, title, fn="process_comparison.png"):
+    """Compare RL vs Delta across processes and maturities."""
+    lam = 1.5
+    labels = [f"{t} — {p}" for t, p in zip(df["T"], df["Process"])]
+    x = np.arange(len(df)); w = 0.35
+    delta_y = df["Δ Mean%"] + lam * df["Δ Std%"]
+    rl_y = df["RL Mean%"] + lam * df["RL Std%"]
+    fig, ax = plt.subplots(figsize=(11, 5))
+    ax.bar(x - w/2, delta_y, w, label="Delta Y(0)", color="salmon", edgecolor="white")
+    ax.bar(x + w/2, rl_y,    w, label="RL Y(0)",    color="steelblue", edgecolor="white")
+    ax.set_xticks(x); ax.set_xticklabels(labels)
+    ax.set(ylabel="Y(0) % of V₀", title=title)
+    ax.legend(); ax.grid(True, alpha=.3, axis="y")
+    fig.tight_layout(); _sv(fig, fn)
+
+
+def plot_maturity_comparison(df, title, fn="maturity_comparison.png"):
+    """Mean/std comparison across maturities."""
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    x = np.arange(len(df)); w = 0.35
+    for ax, cols, sub in zip(
+        axes,
+        [("Δ Mean%", "RL Mean%"), ("Δ Std%", "RL Std%")],
+        ["Mean cost (% of V₀)", "Std cost (% of V₀)"]
+    ):
+        ax.bar(x - w/2, df[cols[0]], w, label="Delta", color="salmon", edgecolor="white")
+        ax.bar(x + w/2, df[cols[1]], w, label="RL", color="steelblue", edgecolor="white")
+        ax.set_xticks(x); ax.set_xticklabels(df["Maturity"])
+        ax.set(ylabel="% of V₀", title=f"{title}\n{sub}")
+        ax.legend(); ax.grid(True, alpha=.3, axis="y")
+    fig.tight_layout(); _sv(fig, fn)
+
+
 # ======================================================================
 # MAIN
 # ======================================================================
@@ -340,9 +389,15 @@ def main():
 
     # A.3 — SABR, T=1 month (Exhibit 6)
     df_a3 = part_A3_A4(cfg, T=1/12, exhibit_name="Exhibit 6")
+    plot_sabr_benchmarks(df_a3,
+        "Exhibit 6 — SABR, T=1m, Short ATM Call\nPractitioner Δ vs Bartlett Δ vs RL | ρ=-0.4, ν=0.6, κ=1%",
+        "A3_exhibit6_sabr_1m.png")
 
     # A.4 — SABR, T=3 months (Exhibit 7)
     df_a4 = part_A3_A4(cfg, T=3/12, exhibit_name="Exhibit 7")
+    plot_sabr_benchmarks(df_a4,
+        "Exhibit 7 — SABR, T=3m, Short ATM Call\nPractitioner Δ vs Bartlett Δ vs RL | ρ=-0.4, ν=0.6, κ=1%",
+        "A4_exhibit7_sabr_3m.png")
 
     # Baseline plots (from A.1 daily run)
     cfg_1m = copy.deepcopy(cfg); cfg_1m["simulation"]["maturity"]=1/12; cfg_1m["simulation"]["n_steps"]=21
@@ -366,9 +421,15 @@ def main():
 
     # B.1 — SVJ process
     df_b1 = part_B1_svj(cfg)
+    plot_process_comparison(df_b1,
+        "Extension B.1 — Process comparison\nGBM vs SVJ | DeepDPG vs BS Delta | daily rebalancing, κ=1%",
+        "B1_process_comparison.png")
 
     # B.2 — Longer maturities
     df_b2 = part_B2_maturities(cfg)
+    plot_maturity_comparison(df_b2,
+        "Extension B.2 — Maturity comparison\nGBM | DeepDPG vs BS Delta | daily rebalancing, κ=1%",
+        "B2_maturity_comparison.png")
 
     # B.3 — Agent comparison
     df_b3 = part_B3_agents(cfg)
