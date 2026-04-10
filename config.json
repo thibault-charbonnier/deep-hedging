@@ -12,7 +12,7 @@
     }
   },
   "hedging_env": { "position_sign": -1.0, "transaction_cost": 0.01 },
-  "training_schedule": { "train_episodes": 1500, "eval_episodes": 200 },
+  "training_schedule": { "train_episodes": 2000, "eval_episodes": 200 },
   "hedging_agent": {
     "discount_factor": 1.0,
     "actor_learning_rate": 0.0001,

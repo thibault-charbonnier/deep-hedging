@@ -171,16 +171,8 @@ def part_B3_agents(base_cfg):
 # MAIN
 # ======================================================================
 def main():
-    logger.info("╔═══════════════════════════════════════════════════════════════╗")
-    logger.info("║  Deep Hedging — Cao, Chen, Hull & Poulos (2021)              ║")
-    logger.info("║  PART A: Paper Replication  |  PART B: Extensions            ║")
-    logger.info("╚═══════════════════════════════════════════════════════════════╝\n")
 
     cfg = json_to_dict("config.json")
-
-    # ══════════════════════════════════════════════════════════════════
-    #  PART A — PAPER REPLICATION
-    # ══════════════════════════════════════════════════════════════════
 
     # A.1 — GBM, T=1 month (Exhibit 3)
     df_a1 = part_A1_A2(cfg, T=1/12, exhibit_name="Exhibit 3")
@@ -221,10 +213,6 @@ def main():
         "Over/Under-hedging — DeepDPG vs BS Delta (Exhibit 5)\n"
         "GBM, T=1m, daily, S₀=100, K=100, σ=20%, κ=1%",
         "A_over_under_hedge.png")
-
-    # ══════════════════════════════════════════════════════════════════
-    #  PART B — EXTENSIONS
-    # ══════════════════════════════════════════════════════════════════
 
     # B.1 — SVJ process
     df_b1 = part_B1_svj(cfg)
