@@ -1,0 +1,45 @@
+{
+  "_comment": "Paper params: T=1/12 (1 month), r=0, q=0, mu=5%, sigma=20%, kappa=1%",
+  "simulation": {
+    "n_steps": 21,
+    "maturity": 0.08333,
+    "S0": 100.0,
+    "gbm": { "mu": 0.05, "sigma": 0.2 },
+    "sabr": { "mu": 0.05, "sigma0": 0.2, "nu": 0.6, "rho": -0.4 },
+    "svj": {
+      "mu": 0.05, "v0": 0.04, "kappa": 1.0, "theta": 0.04,
+      "xi": 0.3, "rho": -0.5,
+      "jump_intensity": 1.0, "jump_mean": -0.02, "jump_std": 0.05
+    }
+  },
+  "hedging_env": { "position_sign": -1.0, "transaction_cost": 0.01 },
+  "training_schedule": { "train_episodes": 10000, "eval_episodes": 2000 },
+  "hedging_agent": {
+    "discount_factor": 1.0,
+    "actor_learning_rate": 0.0001,
+    "critic_learning_rate": 0.001,
+    "learning_rate": 0.0005,
+    "learning_batch_size": 256,
+    "replay_capacity": 200000,
+    "min_buffer_size": 2048,
+    "hidden_dims": [128, 128],
+    "target_update_freq": 100,
+    "action_grid_size": 21,
+    "action_low": 0.0,
+    "action_high": 1.0,
+    "exploration_rate_start": 1.0,
+    "exploration_rate_end": 0.05,
+    "exploration_rate_decay": 0.995,
+    "exploration_noise_start": 0.15,
+    "exploration_noise_end": 0.02,
+    "exploration_noise_decay": 0.9995,
+    "tau": 0.005,
+    "risk_lambda": 1.5,
+    "grad_clip": 1.0,
+    "state_dim": 4,
+    "per_alpha": 0.6,
+    "per_beta_start": 0.4,
+    "per_beta_frames": 100000
+  },
+  "derivative": { "option_type": "call", "strike": 100.0, "rf_rate": 0.0, "div_rate": 0.0 }
+}
