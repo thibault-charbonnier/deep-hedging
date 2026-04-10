@@ -1,68 +1,41 @@
+from __future__ import annotations
+
 import numpy as np
-from typing import Any
-from .base_process import BaseProcess
 
 
-class SABRProcess(BaseProcess):
+class SABRProcess:
     """
-    Implementation of the BaseProcess abstract class for a simplified SABR stochastic volatility process (beta = 1).
-
-    We simulate the discretized version of the simplified SABR SDE:
-        dS_t     = mu * S_t * dt + sigma_t * S_t * dW1_t
-        dσ_t     = nu * sigma_t * dW2_t
-        corr(dW1_t, dW2_t) = rho
-
-    Model-specific parameters:
-        - mu : drift of the process
-        - sigma_0 : initial volatility
-        - nu : volatility of volatility
-        - rho : correlation between the Brownian motions
+    Simplified SABR with beta = 1:
+        dS = mu S dt + sigma S dW1
+        d sigma = nu sigma dW2
+    with corr(dW1, dW2) = rho.
     """
 
-    def __init__(self, simulation_cfg: dict[str, Any]) -> None:
-        """
-        Parameters
-        ----------
-        simulation_cfg : dict
-            Configuration dictionary containing the base information for the simulation and model-specific parameters.
-        """
-        super().__init__(simulation_cfg)
+    def __init__(self, simulation_cfg: dict) -> None:
+        self.n_steps = int(simulation_cfg["n_steps"])
+        self.maturity = float(simulation_cfg["maturity"])
+        self.S0 = float(simulation_cfg["S0"])
+        self.mu = float(simulation_cfg["sabr"].get("mu", 0.0))
+        self.sigma0 = float(simulation_cfg["sabr"].get("sigma0", 0.2))
+        self.nu = float(simulation_cfg["sabr"].get("nu", 0.3))
+        self.rho = float(simulation_cfg["sabr"].get("rho", -0.5))
+        self.dt = self.maturity / self.n_steps
+        self.sqrt_dt = np.sqrt(self.dt)
 
-        self.mu = float(simulation_cfg["mu"])
-        self.sigma0 = float(simulation_cfg["sigma0"])
-        self.nu = float(simulation_cfg["nu"])
-        self.rho = float(simulation_cfg["rho"])
+    def simulate_paths(self, n_paths: int) -> dict[str, np.ndarray]:
+        n_paths = int(n_paths)
+        z1 = np.random.normal(size=(n_paths, self.n_steps))
+        z2_indep = np.random.normal(size=(n_paths, self.n_steps))
+        z2 = self.rho * z1 + np.sqrt(max(1.0 - self.rho ** 2, 0.0)) * z2_indep
 
-    def simulate_one_path(self) -> dict[str, np.ndarray]:
-        """
-        Simulate one path of the simplified SABR process.
+        S = np.empty((n_paths, self.n_steps + 1), dtype=float)
+        sigma = np.empty((n_paths, self.n_steps + 1), dtype=float)
+        S[:, 0] = self.S0
+        sigma[:, 0] = self.sigma0
 
-        Returns
-        -------
-        dict[str, np.ndarray]
-            A dictionary containing:
-            - "S": the simulated price path of the SABR process
-            - "sigma": the simulated volatility path of the SABR process
-        """
-        z1, z2 = self._correlated_normals(self.rho)
+        for t in range(self.n_steps):
+            sigma_t = np.maximum(sigma[:, t], 1e-8)
+            sigma[:, t + 1] = sigma_t * np.exp((-0.5 * self.nu ** 2) * self.dt + self.nu * self.sqrt_dt * z2[:, t])
+            S[:, t + 1] = S[:, t] * np.exp((self.mu - 0.5 * sigma_t ** 2) * self.dt + sigma_t * self.sqrt_dt * z1[:, t])
 
-        S = self._init_1d_path(self.S0)
-        sigma = self._init_1d_path(self.sigma0)
-
-        for i in range(self.n_steps):
-            sigma_i = max(sigma[i], 1e-12)
-
-            sigma[i + 1] = sigma_i * np.exp(
-                -0.5 * self.nu**2 * self.dt
-                + self.nu * self.sqrt_dt * z2[i]
-            )
-            
-            S[i + 1] = S[i] * np.exp(
-                (self.mu - 0.5 * sigma_i**2) * self.dt
-                + sigma_i * self.sqrt_dt * z1[i]
-            )
-
-        return {
-            "S": S,
-            "sigma": sigma,
-        }
+        return {"S": S, "sigma": sigma}
