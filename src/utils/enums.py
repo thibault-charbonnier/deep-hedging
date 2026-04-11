@@ -1,18 +1,21 @@
 from enum import Enum
-from ..benchmark import BSDeltaBenchmark
+from ..benchmark.bs_delta import BSDeltaBenchmark
+from ..benchmark.sabr_practitioner_delta import SABRPractitionerDeltaBenchmark
+from ..benchmark.bartlett_delta import BartlettDeltaBenchmark
+from ..hedging_agents import DeepDPGHedgingAgent, CVaRDeepDPGHedgingAgent
 from ..simulation import GBMProcess, SABRProcess, SVJProcess
-from ..hedging_agents import DQNHedgingAgent, DoubleQDNHedgingAgent, DeepDPGHedgingAgent
 
 
 class ProcessType(Enum):
-    GBM = GBMProcess
+    GBM  = GBMProcess
     SABR = SABRProcess
-    SVJ = SVJProcess
+    SVJ  = SVJProcess
 
 class AgentType(Enum):
-    DQN = DQNHedgingAgent
-    DoubleDQN = DoubleQDNHedgingAgent
-    DeepDPG = DeepDPGHedgingAgent
+    DeepDPG   = DeepDPGHedgingAgent
+    CVaRDPG   = CVaRDeepDPGHedgingAgent
 
 class BenchmarkType(Enum):
-    BsDelta = BSDeltaBenchmark
+    BsDelta              = BSDeltaBenchmark
+    SABRPractitionerDelta = SABRPractitionerDeltaBenchmark
+    BartlettDelta        = BartlettDeltaBenchmark

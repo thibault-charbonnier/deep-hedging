@@ -19,7 +19,7 @@ config = json_to_dict("config.json")
 runner = Orchestrator(
     config=config,
     process_type=ProcessType.GBM,
-    agent_type=AgentType.DQN,
+    agent_type=AgentType.DeepDPG,
     benchmark_type=BenchmarkType.BsDelta
 )
 

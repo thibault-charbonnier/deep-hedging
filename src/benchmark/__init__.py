@@ -1,1 +1,3 @@
 from .bs_delta import BSDeltaBenchmark
+from .sabr_practitioner_delta import SABRPractitionerDeltaBenchmark
+from .bartlett_delta import BartlettDeltaBenchmark
