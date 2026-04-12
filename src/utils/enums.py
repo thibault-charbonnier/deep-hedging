@@ -13,7 +13,7 @@ class ProcessType(Enum):
 
 class AgentType(Enum):
     DeepDPG   = DeepDPGHedgingAgent
-    SkewDPG   = SkewDeepDPGHedgingAgent
+    SkewDDPG   = SkewDeepDPGHedgingAgent
 
 class BenchmarkType(Enum):
     BsDelta              = BSDeltaBenchmark

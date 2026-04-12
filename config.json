@@ -1,8 +1,7 @@
 {
     "simulation":
     {
-        "n_steps": 30,
-        "maturity": 0.08333333,
+        "maturity": 0.25,
         "S0": 100.0,
         "gbm":
         {
@@ -55,7 +54,7 @@
         "grad_clip": 1.0,
         "grad_clip_q3": 0.5,
         "risk_lambda": 1.5,
-        "skew_lambda": 0.05,
+        "skew_lambda": 0.1,
         "skew_eps": 1e-6,
         "skew_penalty": "positive",
         "action_low": 0.0,
@@ -69,16 +68,14 @@
     },
     "run":
     {
-        "mode": "full",
-        "process": "GBM",
-        "agent": "SkewDPG",
+        "maturity": 0.25,
+        "rebalancing": "1",
+        "process": "SVJ",
+        "agent": "SkewDDPG",
         "benchmark": "BsDelta",
         "seed": 42,
         "save_figures": true,
-        "enable_cprofile": true,
-        "profile_top_n": 60,
-        "smoke_train_episodes": 5,
-        "smoke_eval_episodes": 5,
-        "smoke_n_steps": 20
+        "enable_cprofile": false,
+        "profile_top_n": 60
     }
 }

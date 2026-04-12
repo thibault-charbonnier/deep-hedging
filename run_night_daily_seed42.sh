@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Lance toutes les configurations daily (GBM/SABR x DeepDPG/SkewDPG x 1M/3M/1Y) avec seed=42.
+# Lance toutes les configurations daily (GBM/SABR x DeepDPG/SkewDDPG x 1M/3M/1Y) avec seed=42.
 # Usage:
 #   bash run_night_daily_seed42.sh
 #   DRY_RUN=1 bash run_night_daily_seed42.sh
@@ -11,10 +11,10 @@ ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT_DIR"
 
 SEED=42
-MODE="full"
-REBALANCING="daily"
-MATURITIES=("0.0833333333" "0.25" "1.0")
-AGENTS=("DeepDPG" "SkewDPG")
+REBALANCING="1"
+# Maturities in years: 1 month = 0.08333, 3 months = 0.25, 12 months = 1.0
+MATURITIES=("0.08333333" "0.25" "1.0")
+AGENTS=("DeepDPG" "SkewDDPG")
 PROCESSES=("GBM" "SABR")
 
 log_dir="outputs/nightly_logs_$(date +%Y%m%d_%H%M%S)"
@@ -36,7 +36,6 @@ for process in "${PROCESSES[@]}"; do
 
       cmd=(
         python main.py
-        --mode "$MODE"
         --process "$process"
         --agent "$agent"
         --benchmark "$benchmark"

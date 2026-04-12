@@ -24,58 +24,31 @@ logger = logging.getLogger(__name__)
 logger.info("--- Start ---")
 
 
+# Rebalancing frequencies: 1 to 7 days
 REBALANCE_FREQ_DAYS = {
-    "daily": 1,
-    "2d": 2,
-    "3d": 3,
-    "weekly": 5,
-    "biweekly": 10,
-    "monthly": 21,
+    "1": 1,
+    "2": 2,
+    "3": 3,
+    "4": 4,
+    "5": 5,
+    "6": 6,
+    "7": 7,
 }
 
-
-def _enum_from_name(enum_cls, name: str, default_name: str):
-    key = name or default_name
-    if key in enum_cls.__members__:
-        return enum_cls[key]
-    lowered = {k.lower(): k for k in enum_cls.__members__}
-    if key.lower() in lowered:
-        return enum_cls[lowered[key.lower()]]
-    valid = ", ".join(enum_cls.__members__.keys())
-    raise ValueError(f"Invalid {enum_cls.__name__}: '{key}'. Valid values: {valid}")
+TRADING_DAYS_PER_YEAR = 252
 
 
-def _resolve_rebalance_steps(*, maturity: float, rebalancing: str, trading_days_per_year: int) -> int:
+
+def _calculate_n_steps(maturity: float, rebalancing: str) -> int:
+    """Calculate number of steps from maturity and rebalancing frequency."""
     if maturity <= 0:
         raise ValueError("maturity must be > 0")
-    if trading_days_per_year <= 0:
-        raise ValueError("trading_days_per_year must be > 0")
-    if rebalancing not in REBALANCE_FREQ_DAYS:
+    rebalancing_str = str(rebalancing)
+    if rebalancing_str not in REBALANCE_FREQ_DAYS:
         valid = ", ".join(REBALANCE_FREQ_DAYS.keys())
-        raise ValueError(f"Invalid rebalancing: '{rebalancing}'. Valid values: {valid}")
-    freq_days = REBALANCE_FREQ_DAYS[rebalancing]
-    return max(1, int(round(maturity * trading_days_per_year / freq_days)))
-
-
-def _apply_time_grid_overrides(config: dict, args: argparse.Namespace) -> None:
-    run_cfg = config.get("run", {})
-
-    maturity = float(args.maturity) if args.maturity is not None else float(run_cfg.get("maturity", config["simulation"]["maturity"]))
-    trading_days_per_year = int(args.trading_days_per_year) if args.trading_days_per_year is not None else int(run_cfg.get("trading_days_per_year", 252))
-
-    config["simulation"]["maturity"] = maturity
-
-    if args.n_steps is not None:
-        config["simulation"]["n_steps"] = int(args.n_steps)
-        return
-
-    rebalancing = args.rebalancing or run_cfg.get("rebalancing")
-    if rebalancing:
-        config["simulation"]["n_steps"] = _resolve_rebalance_steps(
-            maturity=maturity,
-            rebalancing=str(rebalancing),
-            trading_days_per_year=trading_days_per_year,
-        )
+        raise ValueError(f"Invalid rebalancing: '{rebalancing_str}'. Valid values: {valid}")
+    freq_days = REBALANCE_FREQ_DAYS[rebalancing_str]
+    return max(1, int(round(maturity * TRADING_DAYS_PER_YEAR / freq_days)))
 
 
 def _option_price_t0(config: dict) -> float:
@@ -93,22 +66,15 @@ def _option_price_t0(config: dict) -> float:
     return abs(float(p))
 
 
-def _run_pipeline(
-    config: dict,
-    run_mode: str,
-    process_name: str | None = None,
-    agent_name: str | None = None,
-    benchmark_name: str | None = None,
-    seed: int | None = None,
-) -> tuple[RunStore, RunContext]:
-    run_cfg = config.get("run", {})
-    process_type = _enum_from_name(ProcessType, process_name or run_cfg.get("process", "GBM"), "GBM")
-    agent_type = _enum_from_name(AgentType, agent_name or run_cfg.get("agent", "DeepDPG"), "DeepDPG")
-    benchmark_type = _enum_from_name(BenchmarkType, benchmark_name or run_cfg.get("benchmark", "BsDelta"), "BsDelta")
+def _run_pipeline(config: dict) -> tuple[RunStore, RunContext]:
+    """Run complete pipeline: train + eval_agent + eval_benchmark."""
+    run_cfg = config["run"]
+    process_type = ProcessType[run_cfg["process"]]
+    agent_type = AgentType[run_cfg["agent"]]
+    benchmark_type = BenchmarkType[run_cfg["benchmark"]]
 
     logger.info(
-        "Run setup: mode=%s process=%s agent=%s benchmark=%s",
-        run_mode,
+        "Run setup: process=%s agent=%s benchmark=%s",
         process_type.name,
         agent_type.name,
         benchmark_type.name,
@@ -121,44 +87,27 @@ def _run_pipeline(
         benchmark_type=benchmark_type,
     )
 
-    run_tag = f"main_{run_mode}_{process_type.name}_{agent_type.name}_{benchmark_type.name}"
+    run_tag = f"{process_type.name}_{agent_type.name}_{benchmark_type.name}"
     store = RunStore(base_dir="outputs")
+    seed = run_cfg.get("seed")
     extra_meta = {"seed": seed} if seed is not None else None
     ctx = store.start_run(script=run_tag, config=config, extra_meta=extra_meta)
     option_price_t0 = _option_price_t0(config)
     ok = False
     try:
-        risk_lambda = float(config.get("hedging_agent", {}).get("risk_lambda", 1.5))
-        save_figures = bool(run_cfg.get("save_figures", True))
+        risk_lambda = float(config["hedging_agent"]["risk_lambda"])
+        save_figures = bool(run_cfg["save_figures"])
 
-        if run_mode in {"train", "full", "smoke"}:
-            train_res = runner.train()
+        for label, run_step in (
+            ("train", runner.train),
+            ("eval_agent", runner.test),
+            ("eval_benchmark", runner.test_benchmark),
+        ):
+            result = run_step()
             store.save_result(
                 ctx=ctx,
-                result=train_res,
-                label="train",
-                risk_lambda=risk_lambda,
-                save_figures=save_figures,
-                option_price_t0=option_price_t0,
-            )
-
-        if run_mode in {"eval_agent", "full", "smoke"}:
-            eval_agent_res = runner.test()
-            store.save_result(
-                ctx=ctx,
-                result=eval_agent_res,
-                label="eval_agent",
-                risk_lambda=risk_lambda,
-                save_figures=save_figures,
-                option_price_t0=option_price_t0,
-            )
-
-        if run_mode in {"eval_benchmark", "full", "smoke"}:
-            eval_benchmark_res = runner.test_benchmark()
-            store.save_result(
-                ctx=ctx,
-                result=eval_benchmark_res,
-                label="eval_benchmark",
+                result=result,
+                label=label,
                 risk_lambda=risk_lambda,
                 save_figures=save_figures,
                 option_price_t0=option_price_t0,
@@ -172,67 +121,47 @@ def _run_pipeline(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Deep-hedging runner")
-    parser.add_argument("--config", default="config.json", help="Path to config json")
-    parser.add_argument(
-        "--mode",
-        choices=["train", "eval_agent", "eval_benchmark", "full", "smoke"],
-        default=None,
-        help="Execution mode",
-    )
-    parser.add_argument("--process", default=None, help=f"Process type ({', '.join(ProcessType.__members__.keys())})")
-    parser.add_argument("--agent", default=None, help=f"Agent type ({', '.join(AgentType.__members__.keys())})")
-    parser.add_argument("--benchmark", default=None, help=f"Benchmark type ({', '.join(BenchmarkType.__members__.keys())})")
-    parser.add_argument("--maturity", type=float, default=None, help="Override maturity in years (e.g. 1.0, 0.25)")
-    parser.add_argument("--n-steps", type=int, default=None, help="Override exact number of rebalancing steps")
-    parser.add_argument(
-        "--rebalancing",
-        choices=list(REBALANCE_FREQ_DAYS.keys()),
-        default=None,
-        help="Set rebalancing frequency (maps to n_steps using trading days per year)",
-    )
-    parser.add_argument("--trading-days-per-year", type=int, default=None, help="Trading days per year for rebalancing mapping (default 252)")
-    parser.add_argument("--seed", type=int, default=None, help="Global random seed for reproducible runs")
+    parser = argparse.ArgumentParser(description="Deep-hedging runner - configure everything in config.json")
+    parser.add_argument("--config", default="config.json", help="Path to config file (default: config.json)")
     args = parser.parse_args()
 
+    # Load configuration
     config = json_to_dict(args.config)
-    cfg_mode = config.get("run", {}).get("mode", "full")
-    run_mode = args.mode or cfg_mode
+    run_cfg = config.get("run", {})
 
-    profiling_enabled = bool(config.get("run", {}).get("enable_cprofile", True))
-    profile_top_n = int(config.get("run", {}).get("profile_top_n", 60))
-
-    seed = args.seed if args.seed is not None else config.get("run", {}).get("seed")
+    # Set seed if provided
+    seed = run_cfg.get("seed")
     if seed is not None:
         seed = int(seed)
         set_global_seed(seed)
         logger.info("Seed set to %d", seed)
 
-    if run_mode == "smoke":
-        config["training_schedule"]["train_episodes"] = int(config.get("run", {}).get("smoke_train_episodes", 5))
-        config["training_schedule"]["eval_episodes"] = int(config.get("run", {}).get("smoke_eval_episodes", 5))
-        config["simulation"]["n_steps"] = int(config.get("run", {}).get("smoke_n_steps", 20))
+    # Get maturity and rebalancing from config
+    maturity_years = float(run_cfg.get("maturity", 0.25))
+    config["simulation"]["maturity"] = maturity_years
 
-    # Apply maturity/n_steps/rebalancing overrides after smoke so CLI stays the final authority.
-    _apply_time_grid_overrides(config, args)
+    rebalancing = str(run_cfg.get("rebalancing", "1"))
+    n_steps = _calculate_n_steps(maturity_years, rebalancing)
+    config["simulation"]["n_steps"] = n_steps
 
     logger.info(
-        "Time grid: maturity=%.6f years, n_steps=%d",
-        float(config["simulation"]["maturity"]),
-        int(config["simulation"]["n_steps"]),
+        "Configuration: maturity=%.4f years, rebalancing=%s days, n_steps=%d, seed=%s",
+        maturity_years,
+        rebalancing,
+        n_steps,
+        seed or "default",
     )
+
+    # Run profiler if enabled
+    profiling_enabled = bool(run_cfg.get("enable_cprofile", False))
+    profile_top_n = int(run_cfg.get("profile_top_n", 60))
 
     profiler = cProfile.Profile() if profiling_enabled else None
     if profiler is not None:
         profiler.enable()
-    store, ctx = _run_pipeline(
-        config=config,
-        run_mode=run_mode,
-        process_name=args.process,
-        agent_name=args.agent,
-        benchmark_name=args.benchmark,
-        seed=seed,
-    )
+
+    store, ctx = _run_pipeline(config=config)
+
     if profiler is not None:
         profiler.disable()
         s = io.StringIO()
