@@ -11,6 +11,8 @@ from IPython.display import display
 
 
 def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
+    from src.hedging_result import _nanskewness
+    
     root = Path(outputs_dir) if outputs_dir is not None else Path(__file__).resolve().parents[2] / "outputs"
     run_dir = root / run_id
 
@@ -20,6 +22,10 @@ def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
     bm_steps = pd.read_csv(run_dir / "data" / "eval_benchmark_steps.csv")
     cfg = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
 
+    # Load episode data for skewness calculation
+    rl_episodes = pd.read_csv(run_dir / "tables" / "eval_agent_episodes.csv")
+    bm_episodes = pd.read_csv(run_dir / "tables" / "eval_benchmark_episodes.csv")
+
     y_rl = float(rl_summary.loc[0, "y_objective"])
     y_bm = float(bm_summary.loc[0, "y_objective"])
     mean_rl = float(rl_summary.loc[0, "mean_total_cost"])
@@ -28,15 +34,25 @@ def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
     std_bm = float(bm_summary.loc[0, "std_total_cost"])
     improvement_pct = 100.0 * (y_bm - y_rl) / y_bm if y_bm != 0 else float("nan")
 
+    # Calculate skewness from episode data
+    skew_rl = _nanskewness(rl_episodes["total_cost"].tolist())
+    skew_bm = _nanskewness(bm_episodes["total_cost"].tolist())
+    
     cmp = pd.DataFrame(
         [
-            {"method": "RL (DeepDPG)", "mean_total_cost": mean_rl, "std_total_cost": std_rl, "y_objective": y_rl},
-            {"method": "Benchmark", "mean_total_cost": mean_bm, "std_total_cost": std_bm, "y_objective": y_bm},
+            {"method": "RL (DeepDPG)", "mean_total_cost": mean_rl, "std_total_cost": std_rl, "skew_total_cost": skew_rl, "y_objective": y_rl},
+            {"method": "Benchmark", "mean_total_cost": mean_bm, "std_total_cost": std_bm, "skew_total_cost": skew_bm, "y_objective": y_bm},
         ]
     )
     print(f"Run utilise: {run_id}")
     print(f"Improvement RL vs Benchmark = {improvement_pct:.2f}%")
     display(cmp)
+    
+    # Additional skewness statistics
+    print("\nSkewness Analysis:")
+    print(f"  RL Agent skewness:    {skew_rl:>8.4f}")
+    print(f"  Benchmark skewness:   {skew_bm:>8.4f}")
+    print(f"  Difference (RL-BM):   {skew_rl - skew_bm:>8.4f}")
 
     plt.figure(figsize=(6, 4))
     plt.bar(cmp["method"], cmp["y_objective"])
@@ -119,6 +135,26 @@ def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
     plt.bar(tc["method"], tc["total_trade_cost"])
     plt.ylabel("Total transaction cost")
     plt.title("RL vs Benchmark - Cost de trade complet")
+    plt.tight_layout()
+    plt.show()
+
+    # Skewness comparison
+    plt.figure(figsize=(6, 4))
+    plt.bar(cmp["method"], cmp["skew_total_cost"])
+    plt.ylabel("Skewness of total cost")
+    plt.title("RL vs Benchmark - Skewness")
+    plt.axhline(y=0, color="k", linestyle="--", linewidth=0.5)
+    plt.tight_layout()
+    plt.show()
+
+    # Distribution of total costs with skewness visualization
+    plt.figure(figsize=(10, 5))
+    plt.hist(rl_episodes["total_cost"], bins=30, alpha=0.6, label=f"RL (skew={skew_rl:.3f})", color="blue")
+    plt.hist(bm_episodes["total_cost"], bins=30, alpha=0.6, label=f"Benchmark (skew={skew_bm:.3f})", color="orange")
+    plt.xlabel("Total hedging cost")
+    plt.ylabel("Count")
+    plt.title("Distribution of total cost - RL vs Benchmark")
+    plt.legend()
     plt.tight_layout()
     plt.show()
 

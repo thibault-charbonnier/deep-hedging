@@ -61,12 +61,13 @@ class HedgingEnv:
         else:
             trade_cost = self.transac_cost * spot_next * abs(hedge - self.h_prev)
         v_next, _ = self._derivative_value(i + 1)
-        reward = (v_next - self.v_prev) + hedge * (spot_next - spot_t) - trade_cost
+        reward_raw = (v_next - self.v_prev) + hedge * (spot_next - spot_t) - trade_cost
         done = i == self.n_steps - 1
         liquidation_cost = 0.0
         if done:
             liquidation_cost = self.transac_cost * spot_next * abs(hedge)
-            reward -= liquidation_cost
+            reward_raw -= liquidation_cost
+        reward = reward_raw
         self.episode_reward += reward
         self.episode_cost += -reward
         self.i += 1
@@ -79,10 +80,6 @@ class HedgingEnv:
                 "episode_reward": self.episode_reward, "episode_cost": self.episode_cost}
         return next_state, reward, done, info
 
-    def option_price_t0(self) -> float:
-        p, _ = self.valuation_engine.price_and_delta(
-            spot=float(self.path_data[0]), t=0.0, sigma=self.valuation_sigma)
-        return abs(p)
 
     def _build_state(self, step, hedge_pos):
         idx = min(step, len(self.path_data) - 1)

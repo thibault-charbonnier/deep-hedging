@@ -3,14 +3,13 @@ Shared RL building blocks.
 
 Includes:
 - MLP / CriticMLP network helpers
-- Uniform and **Prioritized** replay buffers (Schaul et al., 2015)
-- Soft / hard target-network updates
+- **Prioritized** replay buffer (Schaul et al., 2015)
+- Hard target-network updates
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from collections import deque
 import random
 from typing import Iterable
 
@@ -66,42 +65,6 @@ class TransitionBatch:
     dones: torch.Tensor
     weights: torch.Tensor          # importance-sampling weights (1.0 for uniform)
     indices: np.ndarray | None     # buffer indices (None for uniform)
-
-
-# ── Uniform replay buffer ────────────────────────────────────────────
-
-class ReplayBuffer:
-    def __init__(self, capacity: int, state_dim: int, action_dim: int = 1):
-        self.capacity = int(capacity)
-        self.buffer: deque[tuple] = deque(maxlen=self.capacity)
-
-    def __len__(self) -> int:
-        return len(self.buffer)
-
-    def push(self, state, action, reward, next_state, done) -> None:
-        self.buffer.append((
-            np.asarray(state, dtype=np.float32).copy(),
-            float(action), float(reward),
-            np.asarray(next_state, dtype=np.float32).copy(),
-            float(done),
-        ))
-
-    def sample(self, batch_size: int, device: torch.device) -> TransitionBatch:
-        batch = random.sample(self.buffer, batch_size)
-        states, actions, rewards, next_states, dones = zip(*batch)
-        n = len(batch)
-        return TransitionBatch(
-            states=torch.as_tensor(np.stack(states), dtype=torch.float32, device=device),
-            actions=torch.as_tensor(np.asarray(actions), dtype=torch.float32, device=device).unsqueeze(-1),
-            rewards=torch.as_tensor(np.asarray(rewards), dtype=torch.float32, device=device).unsqueeze(-1),
-            next_states=torch.as_tensor(np.stack(next_states), dtype=torch.float32, device=device),
-            dones=torch.as_tensor(np.asarray(dones), dtype=torch.float32, device=device).unsqueeze(-1),
-            weights=torch.ones(n, 1, dtype=torch.float32, device=device),
-            indices=None,
-        )
-
-    def update_priorities(self, indices, priorities) -> None:
-        pass  # no-op for uniform buffer
 
 
 # ── Prioritized Experience Replay (Schaul et al., 2015) ──────────────
@@ -234,11 +197,6 @@ class PrioritizedReplayBuffer:
 
 
 # ── Target network updates ──────────────────────────────────────────
-
-def soft_update(target: nn.Module, source: nn.Module, tau: float) -> None:
-    with torch.no_grad():
-        for tp, sp in zip(target.parameters(), source.parameters()):
-            tp.data.mul_(1.0 - tau).add_(tau * sp.data)
 
 
 def hard_update(target: nn.Module, source: nn.Module) -> None:

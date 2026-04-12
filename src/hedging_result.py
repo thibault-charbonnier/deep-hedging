@@ -22,6 +22,22 @@ def _nansum(values: list[float]) -> float:
     return float(np.nansum(values)) if values else np.nan
 
 
+def _nanskewness(values: list[float]) -> float:
+    """Calculate skewness (3rd moment / std^3), handling NaN values."""
+    if not values:
+        return np.nan
+    arr = np.asarray(values, dtype=float)
+    finite_vals = arr[np.isfinite(arr)]
+    if len(finite_vals) < 3:
+        return np.nan
+    mean = float(np.mean(finite_vals))
+    std = float(np.std(finite_vals, ddof=0))
+    if std == 0:
+        return np.nan
+    skew = float(np.mean(((finite_vals - mean) / std) ** 3))
+    return skew
+
+
 @dataclass
 class EpisodeResult:
     split: SplitType
@@ -131,12 +147,14 @@ class HedgingResult:
         for split_name, g in ep.groupby("split", sort=False):
             mean_cost = float(g["total_cost"].mean())
             std_cost = float(g["total_cost"].std(ddof=0))
+            skew_cost = float(_nanskewness(g["total_cost"].tolist()))
             rows.append(
                 {
                     "split": split_name,
                     "episodes": int(len(g)),
                     "mean_total_cost": mean_cost,
                     "std_total_cost": std_cost,
+                    "skew_total_cost": skew_cost,
                     "y_objective": mean_cost + risk_lambda * std_cost,
                 }
             )

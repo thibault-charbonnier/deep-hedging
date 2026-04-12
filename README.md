@@ -67,7 +67,7 @@ Tu peux aussi fixer `run.seed` dans `config.json`.
 Valeurs disponibles:
 
 - `process`: `GBM`, `SABR`, `SVJ`
-- `agent`: `DeepDPG`, `CVaRDPG`, `SkewDPG`
+- `agent`: `DeepDPG`, `SkewDPG`
 - `benchmark`: `BsDelta`, `SABRPractitionerDelta`, `BartlettDelta`
 
 Tu peux aussi piloter le mode dans `config.json` via `run.mode`.

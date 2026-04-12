@@ -19,7 +19,6 @@ from typing import Any
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F_torch
 
 from .abstract_agent import AbstractHedgingAgent
 from ._rl_common import (CriticMLP, MLP, PrioritizedReplayBuffer,

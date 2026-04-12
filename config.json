@@ -1,8 +1,8 @@
 {
     "simulation":
     {
-        "n_steps": 100,
-        "maturity": 1.0,
+        "n_steps": 30,
+        "maturity": 0.08333333,
         "S0": 100.0,
         "gbm":
         {
@@ -55,7 +55,7 @@
         "grad_clip": 1.0,
         "grad_clip_q3": 0.5,
         "risk_lambda": 1.5,
-        "skew_lambda": 0.1,
+        "skew_lambda": 0.05,
         "skew_eps": 1e-6,
         "skew_penalty": "positive",
         "action_low": 0.0,
@@ -70,9 +70,9 @@
     "run":
     {
         "mode": "full",
-        "process": "SABR",
-        "agent": "DeepDPG",
-        "benchmark": "BartlettDelta",
+        "process": "GBM",
+        "agent": "SkewDPG",
+        "benchmark": "BsDelta",
         "seed": 42,
         "save_figures": true,
         "enable_cprofile": true,

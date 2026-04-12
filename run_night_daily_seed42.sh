@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Lance toutes les configurations daily (GBM/SABR x DeepDPG/CVaRDPG x 1M/3M/1Y) avec seed=42.
+# Lance toutes les configurations daily (GBM/SABR x DeepDPG/SkewDPG x 1M/3M/1Y) avec seed=42.
 # Usage:
 #   bash run_night_daily_seed42.sh
 #   DRY_RUN=1 bash run_night_daily_seed42.sh
@@ -14,7 +14,7 @@ SEED=42
 MODE="full"
 REBALANCING="daily"
 MATURITIES=("0.0833333333" "0.25" "1.0")
-AGENTS=("DeepDPG" "CVaRDPG")
+AGENTS=("DeepDPG" "SkewDPG")
 PROCESSES=("GBM" "SABR")
 
 log_dir="outputs/nightly_logs_$(date +%Y%m%d_%H%M%S)"
