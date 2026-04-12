@@ -35,15 +35,15 @@
     },
     "training_schedule":
     {
-        "train_episodes": 2000,
-        "eval_episodes": 1000,
+        "train_episodes": 5000,
+        "eval_episodes": 1500,
         "update_frequency": 1
     },
     "hedging_agent":
     {
         "exploration_rate_start": 1.0,
         "exploration_rate_end": 0.05,
-        "exploration_rate_decay": 0.99995,
+        "exploration_rate_decay": 0.9999,
         "actor_learning_rate": 0.0001,
         "critic_learning_rate": 0.001,
         "discount_factor": 1.0,
@@ -69,8 +69,8 @@
     "run":
     {
         "maturity": 0.0833333333,
-        "rebalancing": "1",
-        "process": "GBM",
+        "rebalancing": 1,
+        "process": "SVJ",
         "agent": "DeepDPG",
         "benchmark": "BsDelta",
         "seed": 42,

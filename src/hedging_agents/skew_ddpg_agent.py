@@ -59,9 +59,9 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
 
         with torch.no_grad():
             na = self.actor_target(next_states)
-            nq1 = self.critic_1_target(next_states, na)
-            nq2 = self.critic_2_target(next_states, na)
-            nq3 = self.critic_3_target(next_states, na)
+            nq1 = self.critic_1_target(next_states, na).squeeze(-1)
+            nq2 = self.critic_2_target(next_states, na).squeeze(-1)
+            nq3 = self.critic_3_target(next_states, na).squeeze(-1)
             nd = 1.0 - dones
 
             tgt_q1 = cost + self.gamma * nd * nq1
@@ -77,9 +77,9 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
                 + (self.gamma ** 3) * nd * nq3
             )
 
-        cq1 = self.critic_1(states, actions)
-        cq2 = self.critic_2(states, actions)
-        cq3 = self.critic_3(states, actions)
+        cq1 = self.critic_1(states, actions).squeeze(-1)
+        cq2 = self.critic_2(states, actions).squeeze(-1)
+        cq3 = self.critic_3(states, actions).squeeze(-1)
 
         td1 = (cq1 - tgt_q1).pow(2)
         td2 = (cq2 - tgt_q2).pow(2)
@@ -104,11 +104,10 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
         torch.nn.utils.clip_grad_norm_(self.critic_3.parameters(), self.grad_clip_q3)
         self.critic_3_opt.step()
 
-        prios = (
-            td1.detach().sqrt().squeeze(-1).cpu().numpy()
-            + td2.detach().sqrt().squeeze(-1).cpu().numpy()
-            + td3.detach().sqrt().squeeze(-1).cpu().numpy()
-        )
+        prios = (td1.detach().sqrt() + td2.detach().sqrt() + td3.detach().sqrt()).cpu().numpy().reshape(-1)
+        prios = torch.as_tensor(prios, dtype=torch.float32).abs().cpu().numpy() + self.per_eps
+        if prios.shape[0] != batch["indexes"].shape[0]:
+            raise ValueError("priorities and indexes must have same length")
         self._update_priorities(batch["indexes"], prios)
 
         for p in self.critic_1.parameters():

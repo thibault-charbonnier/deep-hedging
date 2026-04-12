@@ -120,14 +120,18 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
             self.per_beta_start + self.per_frame * (1.0 - self.per_beta_start) / self.per_beta_frames,
         )
         batch = self.replay_buffer.sample(self.batch_size, beta=beta)
+        rewards = torch.as_tensor(batch["rew"], dtype=torch.float32, device=self.device).reshape(-1)
+        dones = torch.as_tensor(batch["done"], dtype=torch.float32, device=self.device).reshape(-1)
+        weights = torch.as_tensor(batch["weights"], dtype=torch.float32, device=self.device).reshape(-1)
+        indexes = np.asarray(batch["indexes"], dtype=np.int64).reshape(-1)
         return {
             "states": torch.as_tensor(batch["obs"], dtype=torch.float32, device=self.device),
-            "actions": torch.as_tensor(batch["act"], dtype=torch.float32, device=self.device),
-            "rewards": torch.as_tensor(batch["rew"], dtype=torch.float32, device=self.device).unsqueeze(-1),
+            "actions": torch.as_tensor(batch["act"], dtype=torch.float32, device=self.device).reshape(-1, 1),
+            "rewards": rewards,
             "next_states": torch.as_tensor(batch["next_obs"], dtype=torch.float32, device=self.device),
-            "dones": torch.as_tensor(batch["done"], dtype=torch.float32, device=self.device).unsqueeze(-1),
-            "weights": torch.as_tensor(batch["weights"], dtype=torch.float32, device=self.device).unsqueeze(-1),
-            "indexes": np.asarray(batch["indexes"], dtype=np.int64),
+            "dones": dones,
+            "weights": weights,
+            "indexes": indexes,
         }
 
     def act(self, state, eval_mode=False):
@@ -167,14 +171,14 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
 
         with torch.no_grad():
             na = self.actor_target(next_states)
-            nq1 = self.critic_1_target(next_states, na)
-            nq2 = self.critic_2_target(next_states, na)
+            nq1 = self.critic_1_target(next_states, na).squeeze(-1)
+            nq2 = self.critic_2_target(next_states, na).squeeze(-1)
             nd = 1.0 - dones
             tgt_q1 = cost + self.gamma * nd * nq1
             tgt_q2 = (cost**2 + 2 * self.gamma * nd * cost * nq1 + (self.gamma**2) * nd * nq2)
 
-        cq1 = self.critic_1(states, actions)
-        cq2 = self.critic_2(states, actions)
+        cq1 = self.critic_1(states, actions).squeeze(-1)
+        cq2 = self.critic_2(states, actions).squeeze(-1)
 
         td1 = (cq1 - tgt_q1).pow(2)
         td2 = (cq2 - tgt_q2).pow(2)
@@ -191,7 +195,10 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         torch.nn.utils.clip_grad_norm_(self.critic_2.parameters(), self.grad_clip)
         self.critic_2_opt.step()
 
-        prios = (td1.detach().sqrt().squeeze(-1).cpu().numpy() + td2.detach().sqrt().squeeze(-1).cpu().numpy())
+        prios = (td1.detach().sqrt() + td2.detach().sqrt()).cpu().numpy().reshape(-1)
+        prios = np.abs(prios) + self.per_eps
+        if prios.shape[0] != batch["indexes"].shape[0]:
+            raise ValueError("priorities and indexes must have same length")
         self._update_priorities(batch["indexes"], prios)
 
         for p in self.critic_1.parameters():

@@ -26,28 +26,27 @@ logger.info("--- Start ---")
 
 # Rebalancing frequencies: 1 to 7 days
 REBALANCE_FREQ_DAYS = {
-    "1": 1,
-    "2": 2,
-    "3": 3,
-    "4": 4,
-    "5": 5,
-    "6": 6,
-    "7": 7,
+    1: 1,
+    2: 2,
+    3: 3,
+    4: 4,
+    5: 5,
+    6: 6,
+    7: 7,
 }
 
 TRADING_DAYS_PER_YEAR = 252
 
 
 
-def _calculate_n_steps(maturity: float, rebalancing: str) -> int:
+def _calculate_n_steps(maturity: float, rebalancing: int) -> int:
     """Calculate number of steps from maturity and rebalancing frequency."""
     if maturity <= 0:
         raise ValueError("maturity must be > 0")
-    rebalancing_str = str(rebalancing)
-    if rebalancing_str not in REBALANCE_FREQ_DAYS:
-        valid = ", ".join(REBALANCE_FREQ_DAYS.keys())
-        raise ValueError(f"Invalid rebalancing: '{rebalancing_str}'. Valid values: {valid}")
-    freq_days = REBALANCE_FREQ_DAYS[rebalancing_str]
+    if rebalancing not in REBALANCE_FREQ_DAYS:
+        valid = ", ".join(str(k) for k in REBALANCE_FREQ_DAYS.keys())
+        raise ValueError(f"Invalid rebalancing: '{rebalancing}'. Valid values: {valid}")
+    freq_days = REBALANCE_FREQ_DAYS[rebalancing]
     return max(1, int(round(maturity * TRADING_DAYS_PER_YEAR / freq_days)))
 
 
@@ -140,7 +139,7 @@ def main() -> None:
     maturity_years = float(run_cfg.get("maturity", 0.25))
     config["simulation"]["maturity"] = maturity_years
 
-    rebalancing = str(run_cfg.get("rebalancing", "1"))
+    rebalancing = int(run_cfg.get("rebalancing", 1))
     n_steps = _calculate_n_steps(maturity_years, rebalancing)
     config["simulation"]["n_steps"] = n_steps
 
