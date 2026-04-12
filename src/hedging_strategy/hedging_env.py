@@ -9,6 +9,7 @@ State (dim 4) = [holding, log(S/K), TTM/T, σ_t/σ_ref]
 """
 from __future__ import annotations
 from typing import Any
+import math
 import numpy as np
 from ..valuation.bs_valuation import BSValuation
 
@@ -42,21 +43,13 @@ class HedgingEnv:
         self.n_steps = len(self.path_data) - 1
         self.times = np.linspace(0.0, self.maturity, len(self.path_data))
 
-        # Precompute derivative value path once per episode to avoid per-step pricing calls.
-        self._precomputed_v = np.asarray(
-            [
-                self.position_sign
-                * float(
-                    self.valuation_engine.price_and_delta(
-                        spot=float(s),
-                        t=float(t),
-                        sigma=self.valuation_sigma,
-                    )[0]
-                )
-                for s, t in zip(self.path_data, self.times)
-            ],
-            dtype=float,
+        # Vectorized valuation over full path.
+        p, _ = self.valuation_engine.price_and_delta(
+            spot=self.path_data,
+            t=self.times,
+            sigma=self.valuation_sigma,
         )
+        self._precomputed_v = self.position_sign * np.asarray(p, dtype=float)
 
         self.i = 0
         self.v_prev = float(self._precomputed_v[0])
@@ -102,10 +95,12 @@ class HedgingEnv:
         t = self.times[min(step, len(self.times) - 1)]
         spot, vol = self.path_data[idx], self._vol_path[idx]
         ttm = max(self.maturity - t, 0.0)
-        return np.asarray([hedge_pos,
-                           np.log(spot / self.valuation_engine.K),
-                           ttm / self.maturity if self.maturity > 0 else 0.0,
-                           vol / self.valuation_sigma], dtype=float)
+        return np.asarray([
+            hedge_pos,
+            math.log(spot / self.valuation_engine.K),
+            ttm / self.maturity if self.maturity > 0 else 0.0,
+            vol / self.valuation_sigma,
+        ], dtype=np.float32)
 
     def _derivative_value(self, step):
         p, d = self.valuation_engine.price_and_delta(

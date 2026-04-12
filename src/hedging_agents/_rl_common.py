@@ -184,15 +184,20 @@ class PrioritizedReplayBuffer:
         weights = (self.tree.n_entries * sampling_probs) ** (-beta)
         weights /= weights.max()
 
-        states, actions, rewards, next_states, dones = zip(*transitions)
+        # One-shot NumPy batch materialization (faster than zip+stack in this hot path).
+        states = np.array([t[0] for t in transitions], dtype=np.float32)
+        actions = np.array([t[1] for t in transitions], dtype=np.float32)
+        rewards = np.array([t[2] for t in transitions], dtype=np.float32)
+        next_states = np.array([t[3] for t in transitions], dtype=np.float32)
+        dones = np.array([t[4] for t in transitions], dtype=np.float32)
 
         return TransitionBatch(
-            states=torch.as_tensor(np.stack(states), dtype=torch.float32, device=device),
-            actions=torch.as_tensor(np.asarray(actions), dtype=torch.float32, device=device).unsqueeze(-1),
-            rewards=torch.as_tensor(np.asarray(rewards), dtype=torch.float32, device=device).unsqueeze(-1),
-            next_states=torch.as_tensor(np.stack(next_states), dtype=torch.float32, device=device),
-            dones=torch.as_tensor(np.asarray(dones), dtype=torch.float32, device=device).unsqueeze(-1),
-            weights=torch.as_tensor(weights, dtype=torch.float32, device=device).unsqueeze(-1),
+            states=torch.from_numpy(states).to(device),
+            actions=torch.from_numpy(actions).unsqueeze(-1).to(device),
+            rewards=torch.from_numpy(rewards).unsqueeze(-1).to(device),
+            next_states=torch.from_numpy(next_states).to(device),
+            dones=torch.from_numpy(dones).unsqueeze(-1).to(device),
+            weights=torch.tensor(weights, dtype=torch.float32, device=device).unsqueeze(-1),
             indices=np.array(indices, dtype=np.int64),
         )
 
