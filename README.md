@@ -37,6 +37,7 @@ Choix modulaire du process, de l'agent et du benchmark via CLI:
 
 ```bash
 python main.py --mode smoke --process GBM --agent DeepDPG --benchmark BsDelta
+python main.py --mode smoke --process GBM --agent SkewDPG --benchmark BsDelta
 python main.py --mode full --process SABR --agent DeepDPG --benchmark BartlettDelta
 ```
 
@@ -66,7 +67,7 @@ Tu peux aussi fixer `run.seed` dans `config.json`.
 Valeurs disponibles:
 
 - `process`: `GBM`, `SABR`, `SVJ`
-- `agent`: `DeepDPG`, `CVaRDPG`
+- `agent`: `DeepDPG`, `CVaRDPG`, `SkewDPG`
 - `benchmark`: `BsDelta`, `SABRPractitionerDelta`, `BartlettDelta`
 
 Tu peux aussi piloter le mode dans `config.json` via `run.mode`.
@@ -86,6 +87,8 @@ Le fichier `config.json` contient:
 - `simulation`: paramètres de marché (pas, maturité, modèle).
 - `training_schedule`: nombre d'épisodes train/eval.
 - `hedging_agent`: hyperparamètres DDPG (`actor_learning_rate`, `critic_learning_rate`, `learning_batch_size`, etc.).
+  - Pour `SkewDPG`: `skew_lambda`, `skew_penalty`, `skew_eps`.
+  - Gradient clipping: `grad_clip` (global) et `grad_clip_q3` (critic Q3).
 - `run`: paramètres d'exécution (`mode`, `save_figures`, `enable_cprofile`, profils smoke).
 
 ## Outputs produits à chaque run

@@ -1,0 +1,68 @@
+         431627994 function calls (254882633 primitive calls) in 135.844 seconds
+
+   Ordered by: cumulative time
+   List reduced from 7267 to 60 due to restriction <60>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.001    0.001  135.853  135.853 /Users/alexd/Documents/GitHub/deep-hedging/main.py:96(_run_pipeline)
+        1    0.565    0.565  131.144  131.144 /Users/alexd/Documents/GitHub/deep-hedging/src/orchestrator.py:34(train)
+    42000    1.863    0.000  127.241    0.003 /Users/alexd/Documents/GitHub/deep-hedging/src/hedging_agents/ddpg_agent.py:114(learn)
+    41873    3.671    0.000   40.934    0.001 /Users/alexd/Documents/GitHub/deep-hedging/src/hedging_agents/_rl_common.py:192(sample)
+  5359744    1.631    0.000   30.446    0.000 /Users/alexd/Documents/GitHub/deep-hedging/src/hedging_agents/_rl_common.py:152(get)
+91312242/5359744   25.290    0.000   28.815    0.000 /Users/alexd/Documents/GitHub/deep-hedging/src/hedging_agents/_rl_common.py:127(_retrieve)
+    41873    1.790    0.000   20.321    0.000 /Users/alexd/Documents/GitHub/deep-hedging/src/hedging_agents/_rl_common.py:229(update_priorities)
+   125619    0.455    0.000   18.820    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/optim/optimizer.py:512(wrapper)
+  5401744    1.108    0.000   18.462    0.000 /Users/alexd/Documents/GitHub/deep-hedging/src/hedging_agents/_rl_common.py:147(update)
+3309378/395624    1.446    0.000   18.041    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/nn/modules/module.py:1775(_wrapped_call_impl)
+3309378/395624    2.196    0.000   17.815    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/nn/modules/module.py:1783(_call_impl)
+86635426/5401744   17.354    0.000   17.354    0.000 /Users/alexd/Documents/GitHub/deep-hedging/src/hedging_agents/_rl_common.py:121(_propagate)
+   125619    0.303    0.000   17.176    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/optim/optimizer.py:60(_use_grad)
+   125619    0.299    0.000   16.686    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/optim/adam.py:214(step)
+   395624    0.200    0.000   14.697    0.000 /Users/alexd/Documents/GitHub/deep-hedging/src/hedging_agents/_rl_common.py:42(forward)
+   125619    0.094    0.000   14.630    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/_tensor.py:576(backward)
+   125619    0.118    0.000   14.601    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/optim/optimizer.py:132(maybe_fallback)
+   125619    0.484    0.000   14.526    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/autograd/__init__.py:253(backward)
+   125619    0.337    0.000   14.447    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/optim/adam.py:903(adam)
+   395624    1.126    0.000   13.864    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/nn/modules/container.py:248(forward)
+   125619    4.424    0.000   13.544    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/optim/adam.py:347(_single_tensor_adam)
+   125619    0.114    0.000   13.166    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/autograd/graph.py:860(_engine_run_backward)
+   125619   13.022    0.000   13.022    0.000 {method 'run_backward' of 'torch._C._EngineBase' objects}
+376857/125619    0.597    0.000   11.235    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/nn/utils/clip_grad.py:39(_no_grad_wrapper)
+   251238    0.242    0.000   10.684    0.000 /Users/alexd/Documents/GitHub/deep-hedging/src/hedging_agents/_rl_common.py:52(forward)
+   125619    0.375    0.000   10.632    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/nn/utils/clip_grad.py:185(clip_grad_norm_)
+  1186872    0.566    0.000    7.151    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/nn/modules/linear.py:130(forward)
+   144386    1.182    0.000    6.714    0.000 /Users/alexd/Documents/GitHub/deep-hedging/src/hedging_agents/ddpg_agent.py:36(forward)
+  1186872    6.201    0.000    6.201    0.000 {built-in method torch._C._nn.linear}
+93590293/93497252    3.713    0.000    3.728    0.000 {built-in method builtins.len}
+    83746    3.176    0.000    3.655    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/numpy/_core/shape_base.py:378(stack)
+   879354    0.196    0.000    3.262    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/nn/modules/module.py:2666(parameters)
+    63000    0.303    0.000    3.226    0.000 /Users/alexd/Documents/GitHub/deep-hedging/src/hedging_agents/ddpg_agent.py:99(act)
+   125619    0.473    0.000    3.176    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/nn/utils/clip_grad.py:49(_get_total_norm)
+   879354    0.204    0.000    3.067    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/nn/modules/module.py:2691(named_parameters)
+   879354    0.765    0.000    2.863    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/nn/modules/module.py:2646(_named_members)
+        3    0.007    0.002    2.741    0.914 /Users/alexd/Documents/GitHub/deep-hedging/src/persistence/run_store.py:65(save_result)
+   125622    0.082    0.000    2.656    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/_compile.py:42(inner)
+   125619    0.618    0.000    2.656    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/nn/utils/clip_grad.py:120(_clip_grads_with_norm_)
+   837460    2.512    0.000    2.512    0.000 {method 'sqrt' of 'torch._C.TensorBase' objects}
+   791248    0.253    0.000    2.410    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/nn/modules/activation.py:139(forward)
+   791248    0.327    0.000    2.157    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/nn/functional.py:1712(relu)
+   125622    0.242    0.000    1.986    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/_dynamo/eval_frame.py:1240(_fn)
+   791248    1.753    0.000    1.753    0.000 {built-in method torch.relu}
+   125619    0.501    0.000    1.648    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/optim/optimizer.py:1027(zero_grad)
+   125619    0.912    0.000    1.498    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/optim/adam.py:139(_init_group)
+4480518/1172472    1.181    0.000    1.372    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/nn/modules/module.py:2837(named_modules)
+ 20773104    1.329    0.000    1.329    0.000 {method 'append' of 'list' objects}
+   251238    0.359    0.000    1.258    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/autograd/profiler.py:860(__exit__)
+   251238    0.194    0.000    1.227    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/utils/_contextlib.py:120(decorate_context)
+   753714    1.168    0.000    1.168    0.000 {method 'mul_' of 'torch._C.TensorBase' objects}
+   753714    1.162    0.000    1.162    0.000 {method 'add_' of 'torch._C.TensorBase' objects}
+        3    0.002    0.001    1.157    0.386 /Users/alexd/Documents/GitHub/deep-hedging/src/hedging_result.py:91(step_frame)
+        1    0.015    0.015    1.142    1.142 /Users/alexd/Documents/GitHub/deep-hedging/src/orchestrator.py:54(test)
+  5359744    0.736    0.000    1.048    0.000 /opt/homebrew/Cellar/python@3.14/3.14.0_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/random.py:500(uniform)
+   753714    0.994    0.000    0.994    0.000 {method 'addcdiv_' of 'torch._C.TensorBase' objects}
+     4011    0.005    0.000    0.986    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/pandas/core/frame.py:702(__init__)
+     4000    0.007    0.000    0.984    0.000 /Users/alexd/Documents/GitHub/deep-hedging/src/hedging_result.py:56(step_frame)
+   753714    0.528    0.000    0.979    0.000 /Users/alexd/Documents/GitHub/deep-hedging/.venv/lib/python3.14/site-packages/torch/optim/optimizer.py:91(_get_value)
+   125619    0.970    0.000    0.970    0.000 {built-in method torch._foreach_norm}
+
+
