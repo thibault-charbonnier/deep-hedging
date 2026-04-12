@@ -1,0 +1,75 @@
+{
+  "simulation": {
+    "n_steps": 21,
+    "maturity": 0.0833333333,
+    "S0": 100.0,
+    "gbm": {
+      "mu": 0.05,
+      "sigma": 0.2
+    },
+    "sabr": {
+      "mu": 0.05,
+      "sigma0": 0.2,
+      "nu": 0.6,
+      "rho": -0.4
+    },
+    "svj": {
+      "mu": 0.05,
+      "v0": 0.04,
+      "kappa": 1.0,
+      "theta": 0.04,
+      "xi": 0.5,
+      "rho": -0.5,
+      "jump_intensity": 1.0,
+      "jump_mean": -0.02,
+      "jump_std": 0.05
+    }
+  },
+  "hedging_env": {
+    "position_sign": -1.0,
+    "transaction_cost": 0.01
+  },
+  "training_schedule": {
+    "train_episodes": 2000,
+    "eval_episodes": 1000,
+    "update_frequency": 10
+  },
+  "hedging_agent": {
+    "exploration_rate_start": 1.0,
+    "exploration_rate_end": 0.05,
+    "exploration_rate_decay": 0.995,
+    "actor_learning_rate": 0.0001,
+    "critic_learning_rate": 0.001,
+    "discount_factor": 1.0,
+    "learning_batch_size": 128,
+    "replay_capacity": 100000,
+    "min_buffer_size": 128,
+    "target_update_freq": 100,
+    "grad_clip": 1.0,
+    "grad_clip_q3": 0.5,
+    "risk_lambda": 1.5,
+    "skew_lambda": 1.0,
+    "skew_eps": 1e-06,
+    "skew_penalty": "positive",
+    "action_low": 0.0,
+    "action_high": 1.0
+  },
+  "derivative": {
+    "strike": 100.0,
+    "rf_rate": 0.0,
+    "div_rate": 0.0
+  },
+  "run": {
+    "mode": "full",
+    "process": "GBM",
+    "agent": "SkewDPG",
+    "benchmark": "BsDelta",
+    "seed": 42,
+    "save_figures": true,
+    "enable_cprofile": true,
+    "profile_top_n": 60,
+    "smoke_train_episodes": 5,
+    "smoke_eval_episodes": 5,
+    "smoke_n_steps": 20
+  }
+}
