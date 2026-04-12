@@ -19,7 +19,8 @@ import torch.nn as nn
 
 
 def get_device() -> torch.device:
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # For this project workload (small step-wise tensors), CPU is faster than MPS transfer overhead.
+    return torch.device("cpu")
 
 
 # ── Networks ─────────────────────────────────────────────────────────
@@ -90,11 +91,17 @@ class SumTree:
     def _retrieve(self, idx: int, s: float) -> int:
         left = 2 * idx + 1
         right = left + 1
-        if left >= len(self.tree):
-            return idx
-        if s <= self.tree[left]:
-            return self._retrieve(left, s)
-        return self._retrieve(right, s - self.tree[left])
+
+        while left < len(self.tree):
+            if s <= self.tree[left]:
+                idx = left
+            else:
+                s -= self.tree[left]
+                idx = right
+            left = 2 * idx + 1
+            right = left + 1
+
+        return idx
 
     @property
     def total(self) -> float:

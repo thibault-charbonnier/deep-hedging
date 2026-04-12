@@ -41,8 +41,25 @@ class HedgingEnv:
             self._vol_path = np.full_like(self.path_data, self.valuation_sigma)
         self.n_steps = len(self.path_data) - 1
         self.times = np.linspace(0.0, self.maturity, len(self.path_data))
+
+        # Precompute derivative value path once per episode to avoid per-step pricing calls.
+        self._precomputed_v = np.asarray(
+            [
+                self.position_sign
+                * float(
+                    self.valuation_engine.price_and_delta(
+                        spot=float(s),
+                        t=float(t),
+                        sigma=self.valuation_sigma,
+                    )[0]
+                )
+                for s, t in zip(self.path_data, self.times)
+            ],
+            dtype=float,
+        )
+
         self.i = 0
-        self.v_prev, _ = self._derivative_value(0)
+        self.v_prev = float(self._precomputed_v[0])
         self.h_prev = 0.0
         self.is_first_step = True
         self.episode_reward = 0.0
@@ -60,7 +77,7 @@ class HedgingEnv:
             self.is_first_step = False
         else:
             trade_cost = self.transac_cost * spot_next * abs(hedge - self.h_prev)
-        v_next, _ = self._derivative_value(i + 1)
+        v_next = float(self._precomputed_v[i + 1])
         reward_raw = (v_next - self.v_prev) + hedge * (spot_next - spot_t) - trade_cost
         done = i == self.n_steps - 1
         liquidation_cost = 0.0
@@ -79,7 +96,6 @@ class HedgingEnv:
                 "reward": reward, "cost": -reward,
                 "episode_reward": self.episode_reward, "episode_cost": self.episode_cost}
         return next_state, reward, done, info
-
 
     def _build_state(self, step, hedge_pos):
         idx = min(step, len(self.path_data) - 1)

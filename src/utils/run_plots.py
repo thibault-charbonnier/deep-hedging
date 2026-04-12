@@ -10,9 +10,57 @@ from scipy.stats import norm
 from IPython.display import display
 
 
+def _load_train_data(run_id: str, outputs_dir: str | Path | None = None) -> tuple[Path, pd.DataFrame, pd.DataFrame]:
+    root = Path(outputs_dir) if outputs_dir is not None else Path(__file__).resolve().parents[2] / "outputs"
+    run_dir = root / run_id
+    train_steps = pd.read_csv(run_dir / "data" / "train_steps.csv")
+    train_ep = pd.read_csv(run_dir / "tables" / "train_episodes.csv")
+    return run_dir, train_steps, train_ep
+
+
+def _plot_train_loss_core(run_id: str, train_steps: pd.DataFrame, smooth_window: int, show_raw: bool) -> pd.DataFrame:
+    loss_df = train_steps.loc[train_steps["loss"].notna(), ["loss"]].copy()
+    loss_df["update_idx"] = np.arange(len(loss_df), dtype=int)
+    loss_df["loss_smooth"] = loss_df["loss"].rolling(smooth_window, min_periods=1).mean()
+
+    plt.figure(figsize=(9, 4))
+    if show_raw:
+        plt.plot(loss_df["update_idx"], loss_df["loss"], alpha=0.25, label="loss raw")
+    plt.plot(
+        loss_df["update_idx"],
+        loss_df["loss_smooth"],
+        linewidth=2,
+        label=f"loss smooth ({smooth_window})",
+    )
+    plt.title(f"Training loss - {run_id}")
+    plt.xlabel("Update index")
+    plt.ylabel("Loss")
+    plt.grid(alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+    return loss_df
+
+
+def plot_train_loss(
+    run_id: str,
+    outputs_dir: str | Path | None = None,
+    smooth_window: int = 200,
+    show_raw: bool = True,
+) -> pd.DataFrame:
+    """Plot train loss for one run."""
+    run_dir, train_steps, _ = _load_train_data(run_id, outputs_dir)
+    loss_df = _plot_train_loss_core(run_id, train_steps, smooth_window, show_raw)
+
+    print(f"Run utilise: {run_id}")
+    print(f"Source: {run_dir / 'data' / 'train_steps.csv'}")
+    return loss_df
+
+
 def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
     from src.hedging_result import _nanskewness
-    
+
     root = Path(outputs_dir) if outputs_dir is not None else Path(__file__).resolve().parents[2] / "outputs"
     run_dir = root / run_id
 
@@ -37,7 +85,7 @@ def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
     # Calculate skewness from episode data
     skew_rl = _nanskewness(rl_episodes["total_cost"].tolist())
     skew_bm = _nanskewness(bm_episodes["total_cost"].tolist())
-    
+
     cmp = pd.DataFrame(
         [
             {"method": "RL (DeepDPG)", "mean_total_cost": mean_rl, "std_total_cost": std_rl, "skew_total_cost": skew_rl, "y_objective": y_rl},
@@ -47,7 +95,7 @@ def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
     print(f"Run utilise: {run_id}")
     print(f"Improvement RL vs Benchmark = {improvement_pct:.2f}%")
     display(cmp)
-    
+
     # Additional skewness statistics
     print("\nSkewness Analysis:")
     print(f"  RL Agent skewness:    {skew_rl:>8.4f}")
@@ -159,3 +207,70 @@ def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
     plt.show()
 
 
+def plot_run2(
+    run_id: str,
+    outputs_dir: str | Path | None = None,
+    smooth_window: int = 200,
+    show_raw: bool = True,
+) -> None:
+    """Simple learning diagnostics for one run."""
+    _, train_steps, train_ep = _load_train_data(run_id, outputs_dir)
+
+    # 1) Loss over updates (raw + smooth)
+    _plot_train_loss_core(run_id, train_steps, smooth_window, show_raw)
+
+    # 2) Total cost per episode (raw + smooth)
+    ep_idx = train_ep["episode_idx"]
+    total_cost = train_ep["total_cost"]
+    total_cost_smooth = total_cost.rolling(100, min_periods=1).mean()
+    plt.figure(figsize=(9, 4))
+    plt.plot(ep_idx, total_cost, alpha=0.25, label="total_cost raw")
+    plt.plot(ep_idx, total_cost_smooth, linewidth=2, label="total_cost smooth (100)")
+    plt.title(f"Training episode cost - {run_id}")
+    plt.xlabel("Episode")
+    plt.ylabel("Total cost")
+    plt.grid(alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+    # 3) Early vs late total-cost distributions
+    split_idx = len(train_ep) // 2
+    early = train_ep.iloc[:split_idx]["total_cost"]
+    late = train_ep.iloc[split_idx:]["total_cost"]
+    plt.figure(figsize=(8, 4))
+    plt.hist(early, bins=30, alpha=0.6, label="early")
+    plt.hist(late, bins=30, alpha=0.6, label="late")
+    plt.title(f"Early vs late total cost - {run_id}")
+    plt.xlabel("Total cost")
+    plt.ylabel("Count")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+    # 4) Policy stabilization proxy: rolling std of actions
+    action_std = train_steps["action"].rolling(500, min_periods=1).std().fillna(0.0)
+    plt.figure(figsize=(9, 4))
+    plt.plot(action_std, linewidth=2)
+    plt.title(f"Rolling std(action) - {run_id}")
+    plt.xlabel("Train step")
+    plt.ylabel("Rolling std")
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_all_graphs(
+    run_id: str,
+    outputs_dir: str | Path | None = None,
+    smooth_window: int = 200,
+    show_raw: bool = True,
+) -> None:
+    """Run all available plots for one run (learning + RL vs benchmark)."""
+    plot_run2(
+        run_id=run_id,
+        outputs_dir=outputs_dir,
+        smooth_window=smooth_window,
+        show_raw=show_raw,
+    )
+    plot_run(run_id=run_id, outputs_dir=outputs_dir)
