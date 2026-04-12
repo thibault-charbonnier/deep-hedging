@@ -106,6 +106,13 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
             )
             self.replay_buffer.update_priorities(batch.indices, prios)
 
+        for p in self.critic_1.parameters():
+            p.requires_grad_(False)
+        for p in self.critic_2.parameters():
+            p.requires_grad_(False)
+        for p in self.critic_3.parameters():
+            p.requires_grad_(False)
+
         aa = self.actor(batch.states)
         q1a = self.critic_1(batch.states, aa)
         q2a = self.critic_2(batch.states, aa)
@@ -124,6 +131,13 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
         actor_loss.backward()
         torch.nn.utils.clip_grad_norm_(self.actor.parameters(), self.grad_clip)
         self.actor_opt.step()
+
+        for p in self.critic_1.parameters():
+            p.requires_grad_(True)
+        for p in self.critic_2.parameters():
+            p.requires_grad_(True)
+        for p in self.critic_3.parameters():
+            p.requires_grad_(True)
 
         self.learn_steps += 1
         if self.learn_steps % self.target_update_freq == 0:

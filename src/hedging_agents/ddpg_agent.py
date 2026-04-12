@@ -153,8 +153,13 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
                      + td2.detach().sqrt().squeeze(-1).cpu().numpy())
             self.replay_buffer.update_priorities(batch.indices, prios)
 
-        # Actor: minimise F = Q1 + λ√(Q2 - Q1²)
-        aa  = self.actor(batch.states)
+        # Actor: minimise F = Q1 + lambda*sqrt(Q2 - Q1^2)
+        for p in self.critic_1.parameters():
+            p.requires_grad_(False)
+        for p in self.critic_2.parameters():
+            p.requires_grad_(False)
+
+        aa = self.actor(batch.states)
         q1a = self.critic_1(batch.states, aa)
         q2a = self.critic_2(batch.states, aa)
         var_a = torch.clamp(q2a - q1a.pow(2), min=1e-8)
@@ -164,6 +169,11 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         actor_loss.backward()
         torch.nn.utils.clip_grad_norm_(self.actor.parameters(), self.grad_clip)
         self.actor_opt.step()
+
+        for p in self.critic_1.parameters():
+            p.requires_grad_(True)
+        for p in self.critic_2.parameters():
+            p.requires_grad_(True)
 
         # ── Periodic hard target update (Paper Section 2.5) ──────────
         self.learn_steps += 1

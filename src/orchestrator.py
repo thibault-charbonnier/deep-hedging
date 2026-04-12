@@ -15,6 +15,7 @@ class Orchestrator:
         self.benchmark = benchmark_type.value(config)
         self.train_episodes = int(config["training_schedule"]["train_episodes"])
         self.eval_episodes  = int(config["training_schedule"]["eval_episodes"])
+        self.update_frequency = max(1, int(config["training_schedule"].get("update_frequency", 1)))
         self.training_paths = None
         self.eval_paths = None
 
@@ -35,6 +36,7 @@ class Orchestrator:
         self._ensure_training_paths()
         self.agent.set_train_mode()
         res = HedgingResult()
+        step_count = 0
         for ep in range(self.train_episodes):
             path = self._ep_path(self.training_paths, ep)
             state = self.env.setup_env(path)
@@ -45,7 +47,8 @@ class Orchestrator:
                 action = self.agent.act(state, eval_mode=False)
                 ns, reward, done, info = self.env.step(action)
                 self.agent.store_transition(state, action, reward, ns, done)
-                loss = self.agent.learn()
+                step_count += 1
+                loss = self.agent.learn() if (step_count % self.update_frequency == 0) else None
                 er.add_step(action=action, info=info, loss=loss)
                 state = ns
             res.add_episode(er, type="train")
