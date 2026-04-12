@@ -20,9 +20,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from cpprb import PrioritizedReplayBuffer
+
 from .abstract_agent import AbstractHedgingAgent
-from ._rl_common import (CriticMLP, MLP, PrioritizedReplayBuffer,
-                          get_device, hard_update)
+from ._rl_common import CriticMLP, MLP, get_device, hard_update
 
 
 class _Actor(nn.Module):
@@ -43,57 +44,91 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
     def __init__(self, agent_cfg: dict[str, Any]) -> None:
         super().__init__(agent_cfg)
         self.device = get_device()
-        self.state_dim   = int(agent_cfg.get("state_dim", 4))
+        self.state_dim = int(agent_cfg.get("state_dim", 4))
         self.hidden_dims = tuple(agent_cfg.get("hidden_dims", [128, 128]))
-        self.lr_actor    = float(agent_cfg.get("actor_learning_rate", 1e-4))
-        self.lr_critic   = float(agent_cfg.get("critic_learning_rate", 1e-3))
-        self.batch_size  = int(agent_cfg.get("learning_batch_size", 128))
+        self.lr_actor = float(agent_cfg.get("actor_learning_rate", 1e-4))
+        self.lr_critic = float(agent_cfg.get("critic_learning_rate", 1e-3))
+        self.batch_size = int(agent_cfg.get("learning_batch_size", 128))
         self.buffer_size = int(agent_cfg.get("replay_capacity", 100_000))
-        self.min_buffer  = int(agent_cfg.get("min_buffer_size", self.batch_size))
-        self.grad_clip   = float(agent_cfg.get("grad_clip", 1.0))
+        self.min_buffer = int(agent_cfg.get("min_buffer_size", self.batch_size))
+        self.grad_clip = float(agent_cfg.get("grad_clip", 1.0))
         self.risk_lambda = float(agent_cfg.get("risk_lambda", 1.5))
-        self.action_low  = float(agent_cfg.get("action_low", 0.0))
+        self.action_low = float(agent_cfg.get("action_low", 0.0))
         self.action_high = float(agent_cfg.get("action_high", 1.0))
 
-        # ── ε-greedy exploration (Paper Section 2.6) ─────────────────
-        self.epsilon     = float(agent_cfg.get("exploration_rate_start", 1.0))
+        # epsilon-greedy exploration
+        self.epsilon = float(agent_cfg.get("exploration_rate_start", 1.0))
         self.epsilon_min = float(agent_cfg.get("exploration_rate_end", 0.05))
         self.epsilon_decay = float(agent_cfg.get("exploration_rate_decay", 0.995))
 
-        # ── Periodic hard target update (Paper Section 2.5) ──────────
+        # periodic hard target update
         self.target_update_freq = int(agent_cfg.get("target_update_freq", 100))
 
-        # ── Networks ─────────────────────────────────────────────────
-        self.actor          = _Actor(self.state_dim, self.hidden_dims,
-                                     self.action_low, self.action_high).to(self.device)
-        self.actor_target   = _Actor(self.state_dim, self.hidden_dims,
-                                     self.action_low, self.action_high).to(self.device)
-        self.critic_1       = CriticMLP(self.state_dim, 1, self.hidden_dims).to(self.device)
-        self.critic_1_target= CriticMLP(self.state_dim, 1, self.hidden_dims).to(self.device)
-        self.critic_2       = CriticMLP(self.state_dim, 1, self.hidden_dims).to(self.device)
-        self.critic_2_target= CriticMLP(self.state_dim, 1, self.hidden_dims).to(self.device)
+        # networks
+        self.actor = _Actor(self.state_dim, self.hidden_dims, self.action_low, self.action_high).to(self.device)
+        self.actor_target = _Actor(self.state_dim, self.hidden_dims, self.action_low, self.action_high).to(self.device)
+        self.critic_1 = CriticMLP(self.state_dim, 1, self.hidden_dims).to(self.device)
+        self.critic_1_target = CriticMLP(self.state_dim, 1, self.hidden_dims).to(self.device)
+        self.critic_2 = CriticMLP(self.state_dim, 1, self.hidden_dims).to(self.device)
+        self.critic_2_target = CriticMLP(self.state_dim, 1, self.hidden_dims).to(self.device)
         hard_update(self.actor_target, self.actor)
         hard_update(self.critic_1_target, self.critic_1)
         hard_update(self.critic_2_target, self.critic_2)
 
-        self.actor_opt    = torch.optim.Adam(self.actor.parameters(), lr=self.lr_actor)
+        self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=self.lr_actor)
         self.critic_1_opt = torch.optim.Adam(self.critic_1.parameters(), lr=self.lr_critic)
         self.critic_2_opt = torch.optim.Adam(self.critic_2.parameters(), lr=self.lr_critic)
 
-        # ── Prioritized Replay (Paper Section 4) ────────────────────
-        per_alpha  = float(agent_cfg.get("per_alpha", 0.6))
-        per_beta   = float(agent_cfg.get("per_beta_start", 0.4))
-        per_frames = int(agent_cfg.get("per_beta_frames", 100_000))
+        # prioritized replay backend
+        self.per_alpha = float(agent_cfg.get("per_alpha", 0.6))
+        self.per_beta_start = float(agent_cfg.get("per_beta_start", 0.4))
+        self.per_beta_frames = int(agent_cfg.get("per_beta_frames", 100_000))
+        self.per_eps = float(agent_cfg.get("per_eps", 1e-6))
+        self.per_frame = 0
+
+        env_dict = {
+            "obs": {"shape": (self.state_dim,)},
+            "act": {"shape": (1,)},
+            "rew": {},
+            "next_obs": {"shape": (self.state_dim,)},
+            "done": {},
+        }
         self.replay_buffer = PrioritizedReplayBuffer(
-            self.buffer_size, self.state_dim, 1,
-            alpha=per_alpha, beta_start=per_beta, beta_frames=per_frames)
+            size=self.buffer_size,
+            env_dict=env_dict,
+            alpha=self.per_alpha,
+            beta=self.per_beta_start,
+            eps=self.per_eps,
+        )
 
         self.train_mode_enabled = True
         self.learn_steps = 0
 
     def _st(self, state):
-        return torch.as_tensor(np.asarray(state, dtype=np.float32),
-                               device=self.device).unsqueeze(0)
+        return torch.as_tensor(np.asarray(state, dtype=np.float32), device=self.device).unsqueeze(0)
+
+    def _replay_size(self) -> int:
+        return int(self.replay_buffer.get_stored_size())
+
+    def _update_priorities(self, indices: np.ndarray, priorities: np.ndarray) -> None:
+        self.replay_buffer.update_priorities(indices, priorities)
+
+    def _sample_batch_tensors(self) -> dict[str, Any]:
+        self.per_frame += 1
+        beta = min(
+            1.0,
+            self.per_beta_start + self.per_frame * (1.0 - self.per_beta_start) / self.per_beta_frames,
+        )
+        batch = self.replay_buffer.sample(self.batch_size, beta=beta)
+        return {
+            "states": torch.as_tensor(batch["obs"], dtype=torch.float32, device=self.device),
+            "actions": torch.as_tensor(batch["act"], dtype=torch.float32, device=self.device),
+            "rewards": torch.as_tensor(batch["rew"], dtype=torch.float32, device=self.device).unsqueeze(-1),
+            "next_states": torch.as_tensor(batch["next_obs"], dtype=torch.float32, device=self.device),
+            "dones": torch.as_tensor(batch["done"], dtype=torch.float32, device=self.device).unsqueeze(-1),
+            "weights": torch.as_tensor(batch["weights"], dtype=torch.float32, device=self.device).unsqueeze(-1),
+            "indexes": np.asarray(batch["indexes"], dtype=np.int64),
+        }
 
     def act(self, state, eval_mode=False):
         # ── ε-greedy (Paper Section 2.6) ─────────────────────────────
@@ -108,30 +143,39 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         return float(np.clip(a, self.action_low, self.action_high))
 
     def store_transition(self, state, action, reward, next_state, done):
-        self.replay_buffer.push(state, action, reward, next_state, done)
+        self.replay_buffer.add(
+            obs=np.asarray(state, dtype=np.float32),
+            act=np.asarray([float(action)], dtype=np.float32),
+            rew=float(reward),
+            next_obs=np.asarray(next_state, dtype=np.float32),
+            done=float(done),
+        )
 
     def learn(self):
-        if len(self.replay_buffer) < self.min_buffer:
+        if self._replay_size() < self.min_buffer:
             return None
 
-        batch = self.replay_buffer.sample(self.batch_size, self.device)
-        cost = -batch.rewards
-        w = batch.weights          # IS weights from PER
+        batch = self._sample_batch_tensors()
+        states = batch["states"]
+        actions = batch["actions"]
+        rewards = batch["rewards"]
+        next_states = batch["next_states"]
+        dones = batch["dones"]
+        w = batch["weights"]
+
+        cost = -rewards
 
         with torch.no_grad():
-            na  = self.actor_target(batch.next_states)
-            nq1 = self.critic_1_target(batch.next_states, na)
-            nq2 = self.critic_2_target(batch.next_states, na)
-            nd  = 1.0 - batch.dones
+            na = self.actor_target(next_states)
+            nq1 = self.critic_1_target(next_states, na)
+            nq2 = self.critic_2_target(next_states, na)
+            nd = 1.0 - dones
             tgt_q1 = cost + self.gamma * nd * nq1
-            tgt_q2 = (cost**2
-                      + 2 * self.gamma * nd * cost * nq1
-                      + (self.gamma**2) * nd * nq2)
+            tgt_q2 = (cost**2 + 2 * self.gamma * nd * cost * nq1 + (self.gamma**2) * nd * nq2)
 
-        cq1 = self.critic_1(batch.states, batch.actions)
-        cq2 = self.critic_2(batch.states, batch.actions)
+        cq1 = self.critic_1(states, actions)
+        cq2 = self.critic_2(states, actions)
 
-        # IS-weighted MSE losses
         td1 = (cq1 - tgt_q1).pow(2)
         td2 = (cq2 - tgt_q2).pow(2)
         loss_c1 = (w * td1).mean()
@@ -147,21 +191,17 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         torch.nn.utils.clip_grad_norm_(self.critic_2.parameters(), self.grad_clip)
         self.critic_2_opt.step()
 
-        # Update PER priorities
-        if batch.indices is not None:
-            prios = (td1.detach().sqrt().squeeze(-1).cpu().numpy()
-                     + td2.detach().sqrt().squeeze(-1).cpu().numpy())
-            self.replay_buffer.update_priorities(batch.indices, prios)
+        prios = (td1.detach().sqrt().squeeze(-1).cpu().numpy() + td2.detach().sqrt().squeeze(-1).cpu().numpy())
+        self._update_priorities(batch["indexes"], prios)
 
-        # Actor: minimise F = Q1 + lambda*sqrt(Q2 - Q1^2)
         for p in self.critic_1.parameters():
             p.requires_grad_(False)
         for p in self.critic_2.parameters():
             p.requires_grad_(False)
 
-        aa = self.actor(batch.states)
-        q1a = self.critic_1(batch.states, aa)
-        q2a = self.critic_2(batch.states, aa)
+        aa = self.actor(states)
+        q1a = self.critic_1(states, aa)
+        q2a = self.critic_2(states, aa)
         var_a = torch.clamp(q2a - q1a.pow(2), min=1e-8)
         actor_loss = (q1a + self.risk_lambda * torch.sqrt(var_a)).mean()
 
@@ -175,14 +215,12 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         for p in self.critic_2.parameters():
             p.requires_grad_(True)
 
-        # ── Periodic hard target update (Paper Section 2.5) ──────────
         self.learn_steps += 1
         if self.learn_steps % self.target_update_freq == 0:
             hard_update(self.actor_target, self.actor)
             hard_update(self.critic_1_target, self.critic_1)
             hard_update(self.critic_2_target, self.critic_2)
 
-        # ε decay
         if self.train_mode_enabled:
             self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 

@@ -44,19 +44,25 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
         return torch.relu(skew)
 
     def learn(self):
-        if len(self.replay_buffer) < self.min_buffer:
+        if self._replay_size() < self.min_buffer:
             return None
 
-        batch = self.replay_buffer.sample(self.batch_size, self.device)
-        cost = -batch.rewards
-        w = batch.weights
+        batch = self._sample_batch_tensors()
+        states = batch["states"]
+        actions = batch["actions"]
+        rewards = batch["rewards"]
+        next_states = batch["next_states"]
+        dones = batch["dones"]
+        w = batch["weights"]
+
+        cost = -rewards
 
         with torch.no_grad():
-            na = self.actor_target(batch.next_states)
-            nq1 = self.critic_1_target(batch.next_states, na)
-            nq2 = self.critic_2_target(batch.next_states, na)
-            nq3 = self.critic_3_target(batch.next_states, na)
-            nd = 1.0 - batch.dones
+            na = self.actor_target(next_states)
+            nq1 = self.critic_1_target(next_states, na)
+            nq2 = self.critic_2_target(next_states, na)
+            nq3 = self.critic_3_target(next_states, na)
+            nd = 1.0 - dones
 
             tgt_q1 = cost + self.gamma * nd * nq1
             tgt_q2 = (
@@ -71,9 +77,9 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
                 + (self.gamma ** 3) * nd * nq3
             )
 
-        cq1 = self.critic_1(batch.states, batch.actions)
-        cq2 = self.critic_2(batch.states, batch.actions)
-        cq3 = self.critic_3(batch.states, batch.actions)
+        cq1 = self.critic_1(states, actions)
+        cq2 = self.critic_2(states, actions)
+        cq3 = self.critic_3(states, actions)
 
         td1 = (cq1 - tgt_q1).pow(2)
         td2 = (cq2 - tgt_q2).pow(2)
@@ -98,13 +104,12 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
         torch.nn.utils.clip_grad_norm_(self.critic_3.parameters(), self.grad_clip_q3)
         self.critic_3_opt.step()
 
-        if batch.indices is not None:
-            prios = (
-                td1.detach().sqrt().squeeze(-1).cpu().numpy()
-                + td2.detach().sqrt().squeeze(-1).cpu().numpy()
-                + td3.detach().sqrt().squeeze(-1).cpu().numpy()
-            )
-            self.replay_buffer.update_priorities(batch.indices, prios)
+        prios = (
+            td1.detach().sqrt().squeeze(-1).cpu().numpy()
+            + td2.detach().sqrt().squeeze(-1).cpu().numpy()
+            + td3.detach().sqrt().squeeze(-1).cpu().numpy()
+        )
+        self._update_priorities(batch["indexes"], prios)
 
         for p in self.critic_1.parameters():
             p.requires_grad_(False)
@@ -113,10 +118,10 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
         for p in self.critic_3.parameters():
             p.requires_grad_(False)
 
-        aa = self.actor(batch.states)
-        q1a = self.critic_1(batch.states, aa)
-        q2a = self.critic_2(batch.states, aa)
-        q3a = self.critic_3(batch.states, aa)
+        aa = self.actor(states)
+        q1a = self.critic_1(states, aa)
+        q2a = self.critic_2(states, aa)
+        q3a = self.critic_3(states, aa)
 
         var_a = torch.clamp(q2a - q1a.pow(2), min=self.skew_eps)
         std_a = torch.sqrt(var_a)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 import logging
-from .hedging_strategy.hedging_env import HedgingEnv
+from .hedging_strategy.gym_hedging_env import GymHedgingEnv
 from .hedging_result import HedgingResult, EpisodeResult
 
 logger = logging.getLogger(__name__)
@@ -9,12 +9,12 @@ logger = logging.getLogger(__name__)
 class Orchestrator:
     def __init__(self, config, process_type, agent_type, benchmark_type):
         self.config = config
-        self.env = HedgingEnv(config)
+        self.env = GymHedgingEnv(config)
         self.process = process_type.value(config["simulation"])
         self.agent = agent_type.value(config["hedging_agent"])
         self.benchmark = benchmark_type.value(config)
         self.train_episodes = int(config["training_schedule"]["train_episodes"])
-        self.eval_episodes  = int(config["training_schedule"]["eval_episodes"])
+        self.eval_episodes = int(config["training_schedule"]["eval_episodes"])
         self.update_frequency = max(1, int(config["training_schedule"].get("update_frequency", 1)))
         self.training_paths = None
         self.eval_paths = None
@@ -39,13 +39,13 @@ class Orchestrator:
         step_count = 0
         for ep in range(self.train_episodes):
             path = self._ep_path(self.training_paths, ep)
-            state = self.env.setup_env(path)
+            state, _ = self.env.reset(options={"path_data": path})
             done = False
-            er = EpisodeResult(split="train", episode_idx=ep,
-                               times=self.env.times, path_data=path)
+            er = EpisodeResult(split="train", episode_idx=ep, times=self.env.times, path_data=path)
             while not done:
                 action = self.agent.act(state, eval_mode=False)
-                ns, reward, done, info = self.env.step(action)
+                ns, reward, terminated, truncated, info = self.env.step(action)
+                done = bool(terminated or truncated)
                 self.agent.store_transition(state, action, reward, ns, done)
                 step_count += 1
                 loss = self.agent.learn() if (step_count % self.update_frequency == 0) else None
@@ -60,13 +60,13 @@ class Orchestrator:
         res = HedgingResult()
         for ep in range(self.eval_episodes):
             path = self._ep_path(self.eval_paths, ep)
-            state = self.env.setup_env(path)
+            state, _ = self.env.reset(options={"path_data": path})
             done = False
-            er = EpisodeResult(split="eval_agent", episode_idx=ep,
-                               times=self.env.times, path_data=path)
+            er = EpisodeResult(split="eval_agent", episode_idx=ep, times=self.env.times, path_data=path)
             while not done:
                 action = self.agent.act(state, eval_mode=True)
-                state, _, done, info = self.env.step(action)
+                state, _, terminated, truncated, info = self.env.step(action)
+                done = bool(terminated or truncated)
                 er.add_step(action=action, info=info)
             res.add_episode(er, type="eval_agent")
         return res
@@ -77,13 +77,13 @@ class Orchestrator:
         res = HedgingResult()
         for ep in range(self.eval_episodes):
             path = self._ep_path(self.eval_paths, ep)
-            state = self.env.setup_env(path)
+            state, _ = self.env.reset(options={"path_data": path})
             done = False
-            er = EpisodeResult(split="eval_benchmark", episode_idx=ep,
-                               times=self.env.times, path_data=path)
+            er = EpisodeResult(split="eval_benchmark", episode_idx=ep, times=self.env.times, path_data=path)
             while not done:
                 action = bench(state)
-                state, _, done, info = self.env.step(action)
+                state, _, terminated, truncated, info = self.env.step(action)
+                done = bool(terminated or truncated)
                 er.add_step(action=action, info=info)
             res.add_episode(er, type="eval_benchmark")
         return res
