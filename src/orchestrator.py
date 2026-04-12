@@ -1,9 +1,7 @@
 from __future__ import annotations
 import logging
-from typing import Any
 from .hedging_strategy.hedging_env import HedgingEnv
 from .hedging_result import HedgingResult, EpisodeResult
-from .utils.enums import AgentType, ProcessType, BenchmarkType
 
 logger = logging.getLogger(__name__)
 
@@ -17,14 +15,24 @@ class Orchestrator:
         self.benchmark = benchmark_type.value(config)
         self.train_episodes = int(config["training_schedule"]["train_episodes"])
         self.eval_episodes  = int(config["training_schedule"]["eval_episodes"])
-        logger.info("Simulating paths...")
-        self.training_paths = self.process.simulate_paths(self.train_episodes)
-        self.eval_paths     = self.process.simulate_paths(self.eval_episodes)
+        self.training_paths = None
+        self.eval_paths = None
 
     def _ep_path(self, paths, ep):
         return {k: v[ep] for k, v in paths.items()}
 
+    def _ensure_training_paths(self):
+        if self.training_paths is None:
+            logger.info("Simulating training paths...")
+            self.training_paths = self.process.simulate_paths(self.train_episodes)
+
+    def _ensure_eval_paths(self):
+        if self.eval_paths is None:
+            logger.info("Simulating evaluation paths...")
+            self.eval_paths = self.process.simulate_paths(self.eval_episodes)
+
     def train(self):
+        self._ensure_training_paths()
         self.agent.set_train_mode()
         res = HedgingResult()
         for ep in range(self.train_episodes):
@@ -44,6 +52,7 @@ class Orchestrator:
         return res
 
     def test(self):
+        self._ensure_eval_paths()
         self.agent.set_eval_mode()
         res = HedgingResult()
         for ep in range(self.eval_episodes):
@@ -60,6 +69,7 @@ class Orchestrator:
         return res
 
     def test_benchmark(self, benchmark_override=None):
+        self._ensure_eval_paths()
         bench = benchmark_override or self.benchmark
         res = HedgingResult()
         for ep in range(self.eval_episodes):
