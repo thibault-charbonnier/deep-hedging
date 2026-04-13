@@ -1,0 +1,2 @@
+split,episodes,mean_total_cost,std_total_cost,skew_total_cost,y_objective
+eval_agent,1500,47.28103654052704,47.88084030498135,0.37604082610511874,119.10229699799906
