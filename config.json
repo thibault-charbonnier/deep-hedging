@@ -71,7 +71,7 @@
         "maturity": 0.0833333333,
         "rebalancing": 1,
         "process": "SVJ",
-        "agent": "DeepDPG",
+        "agent": "SkewDDPG",
         "benchmark": "BsDelta",
         "seed": 42,
         "save_figures": true,
