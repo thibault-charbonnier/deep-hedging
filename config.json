@@ -57,6 +57,7 @@
         "skew_lambda": 0.1,
         "skew_eps": 1e-8,
         "skew_penalty": "positive",
+        "skew_transform": "cbrt",
         "action_low": 0.0,
         "action_high": 1.0
     },

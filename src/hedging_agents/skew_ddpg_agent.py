@@ -10,12 +10,15 @@ Actor objective extends mean-std with a skewness penalty:
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import torch
 
 from .ddpg_agent import DeepDPGHedgingAgent
 from ._rl_common import CriticMLP, hard_update, soft_update
+
+logger = logging.getLogger(__name__)
 
 
 class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
@@ -27,6 +30,11 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
         self.skew_lambda = float(agent_cfg.get("skew_lambda", 0.1))
         self.skew_eps = float(agent_cfg.get("skew_eps", 1e-6))
         self.skew_penalty = str(agent_cfg.get("skew_penalty", "positive")).lower()
+        self.skew_transform = str(agent_cfg.get("skew_transform", "cbrt")).lower()
+        if self.skew_transform not in {"cbrt", "std"}:
+            raise ValueError(
+                f"skew_transform must be 'cbrt' or 'std', got '{self.skew_transform}'"
+            )
         self.grad_clip_q3 = float(agent_cfg.get("grad_clip_q3", self.grad_clip))
 
         # Third critic for E[C^3]
@@ -34,6 +42,12 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
         self.critic_3_target = CriticMLP(self.state_dim, 1, self.hidden_dims).to(self.device)
         hard_update(self.critic_3_target, self.critic_3)
         self.critic_3_opt = torch.optim.Adam(self.critic_3.parameters(), lr=self.lr_critic)
+        logger.info(
+            "SkewDDPG initialized with skew_transform=%s, skew_lambda=%.4f, skew_penalty=%s",
+            self.skew_transform,
+            self.skew_lambda,
+            self.skew_penalty,
+        )
 
     def _apply_skew_penalty(self, skew: torch.Tensor) -> torch.Tensor:
         if self.skew_penalty == "absolute":
@@ -122,7 +136,23 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
         var_a = torch.clamp(q2a - q1a.pow(2), min=self.skew_eps)
         std_a = torch.sqrt(var_a)
         central_m3 = q3a - 3.0 * q1a * q2a + 2.0 * q1a.pow(3)
-        skew_a = central_m3 / (std_a.pow(3) + self.skew_eps)
+
+        if self.skew_transform == "cbrt":
+            # Signed cube root of the 3rd central moment.
+            # Homogeneous in $ units with Q1 and std_a, no division.
+            # Wilson & Hilferty (1931) asymptotic normalization for the
+            # 3rd moment, combined with sign-preserving structure used
+            # in R2D2 (Pohlen et al. 2018) and DreamerV3 (Hafner et al. 2023).
+            skew_a = torch.sign(central_m3) * torch.pow(
+                torch.abs(central_m3) + self.skew_eps, 1.0 / 3.0
+            )
+        else:  # "std"
+            # Standardized Pearson skewness m3 / sigma^3 (original paper).
+            # Clipped to [-1e3, 1e3] to avoid NaN divergence when the
+            # variance estimate collapses during training — without this
+            # clip the ablation run diverges in a few steps.
+            skew_a = central_m3 / (std_a.pow(3) + self.skew_eps)
+            skew_a = torch.clamp(skew_a, min=-1e3, max=1e3)
 
         actor_loss = (
             q1a + self.risk_lambda * std_a + self.skew_lambda * self._apply_skew_penalty(skew_a)
