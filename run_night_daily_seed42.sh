@@ -19,11 +19,11 @@ PROCESSES=("GBM" "SABR" "SVJ")
 AGENTS=("DeepDPG" "SkewDDPG")
 MATURITIES=("0.0833333333" "0.25" "1.0")
 
-# name|actor_lr|critic_lr|exploration_decay|risk_lambda|per_alpha
+# name|actor_lr|critic_lr|noise_decay|risk_lambda|per_alpha
 HYPER_PROFILES=(
-  "base|1e-4|1e-3|0.9999|1.5|0.6"
-  "stable|8e-5|8e-4|0.99995|1.2|0.5"
-  "fast|2e-4|1e-3|0.99985|1.0|0.6"
+  "base|1e-4|1e-3|0.9995|1.5|0.6"
+  "stable|8e-5|8e-4|0.9998|1.2|0.5"
+  "fast|2e-4|1e-3|0.999|1.0|0.6"
 )
 
 TS="$(date +%Y%m%d_%H%M%S)"
@@ -74,7 +74,7 @@ cfg["training_schedule"]["eval_episodes"] = 1500
 ha = cfg["hedging_agent"]
 ha["actor_learning_rate"] = float("${actor_lr}")
 ha["critic_learning_rate"] = float("${critic_lr}")
-ha["exploration_rate_decay"] = float("${eps_decay}")
+ha["exploration_noise_decay"] = float("${eps_decay}")
 ha["risk_lambda"] = float("${risk_lambda}")
 ha["per_alpha"] = float("${per_alpha}")
 

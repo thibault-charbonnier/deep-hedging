@@ -41,9 +41,9 @@
     },
     "hedging_agent":
     {
-        "exploration_rate_start": 1.0,
-        "exploration_rate_end": 0.05,
-        "exploration_rate_decay": 0.9999,
+        "exploration_noise_start": 0.30,
+        "exploration_noise_end": 0.05,
+        "exploration_noise_decay": 0.9995,
         "actor_learning_rate": 0.0001,
         "critic_learning_rate": 0.001,
         "discount_factor": 1.0,
