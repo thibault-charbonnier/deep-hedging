@@ -56,7 +56,10 @@ class Orchestrator:
         total_reward = 0.0
         for step_idx in range(1, n + 1):
             is_terminal_action = step_idx == n
-            ai = float(policy_fn(state))
+            if is_terminal_action:
+                ai = 0.0
+            else:
+                ai = float(policy_fn(state))
             state_next, raw_i = self.env.apply_action(ai)
 
             v_curr = raw_i["V_i"]
