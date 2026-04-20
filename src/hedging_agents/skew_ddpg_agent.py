@@ -15,7 +15,7 @@ from typing import Any
 import torch
 
 from .ddpg_agent import DeepDPGHedgingAgent
-from ._rl_common import CriticMLP, hard_update
+from ._rl_common import CriticMLP, hard_update, soft_update
 
 
 class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
@@ -141,11 +141,10 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
             p.requires_grad_(True)
 
         self.learn_steps += 1
-        if self.learn_steps % self.target_update_freq == 0:
-            hard_update(self.actor_target, self.actor)
-            hard_update(self.critic_1_target, self.critic_1)
-            hard_update(self.critic_2_target, self.critic_2)
-            hard_update(self.critic_3_target, self.critic_3)
+        soft_update(self.actor_target, self.actor, self.tau)
+        soft_update(self.critic_1_target, self.critic_1, self.tau)
+        soft_update(self.critic_2_target, self.critic_2, self.tau)
+        soft_update(self.critic_3_target, self.critic_3, self.tau)
 
         if self.train_mode_enabled:
             self.noise_std = max(self.noise_std_min, self.noise_std * self.noise_decay)

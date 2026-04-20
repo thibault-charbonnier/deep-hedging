@@ -51,4 +51,17 @@ class CriticMLP(nn.Module):
 
 
 def hard_update(target: nn.Module, source: nn.Module) -> None:
+    """One-shot copy θ' ← θ. Used for initial target network synchronisation."""
     target.load_state_dict(source.state_dict())
+
+
+def soft_update(target: nn.Module, source: nn.Module, tau: float) -> None:
+    """Polyak averaging: θ' ← τ·θ + (1-τ)·θ'  (Lillicrap et al. 2016, Section 3).
+
+    Applied at every learn step with small tau (typically 0.001-0.01)
+    to provide a slowly-tracking target that stabilises critic training.
+    """
+    with torch.no_grad():
+        for target_param, source_param in zip(target.parameters(), source.parameters()):
+            target_param.data.mul_(1.0 - tau).add_(source_param.data, alpha=tau)
+

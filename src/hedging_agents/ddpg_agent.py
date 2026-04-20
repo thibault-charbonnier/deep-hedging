@@ -27,7 +27,7 @@ import torch.nn as nn
 from cpprb import PrioritizedReplayBuffer
 
 from .abstract_agent import AbstractHedgingAgent
-from ._rl_common import CriticMLP, MLP, DEVICE, hard_update
+from ._rl_common import CriticMLP, MLP, DEVICE, hard_update, soft_update
 
 
 class _Actor(nn.Module):
@@ -65,8 +65,10 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         self.noise_std_min = float(agent_cfg.get("exploration_noise_end", 0.05))
         self.noise_decay = float(agent_cfg.get("exploration_noise_decay", 0.9995))
 
-        # periodic hard target update
-        self.target_update_freq = int(agent_cfg.get("target_update_freq", 100))
+        # Soft target updates (Lillicrap et al. 2016, Section 3).
+        # θ' ← τ·θ + (1-τ)·θ' applied at every learn step.
+        # τ = 0.005 follows TD3 (Fujimoto et al. 2018); Lillicrap used 0.001.
+        self.tau = float(agent_cfg.get("tau", 0.005))
 
         # networks
         self.actor = _Actor(self.state_dim, self.hidden_dims, self.action_low, self.action_high).to(self.device)
@@ -222,10 +224,9 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
             p.requires_grad_(True)
 
         self.learn_steps += 1
-        if self.learn_steps % self.target_update_freq == 0:
-            hard_update(self.actor_target, self.actor)
-            hard_update(self.critic_1_target, self.critic_1)
-            hard_update(self.critic_2_target, self.critic_2)
+        soft_update(self.actor_target, self.actor, self.tau)
+        soft_update(self.critic_1_target, self.critic_1, self.tau)
+        soft_update(self.critic_2_target, self.critic_2, self.tau)
 
         if self.train_mode_enabled:
             self.noise_std = max(self.noise_std_min, self.noise_std * self.noise_decay)
