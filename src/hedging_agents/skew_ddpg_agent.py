@@ -153,30 +153,12 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
 
 
     def set_eval_mode(self):
-        self.train_mode_enabled = False
-        for m in [
-            self.actor,
-            self.actor_target,
-            self.critic_1,
-            self.critic_1_target,
-            self.critic_2,
-            self.critic_2_target,
-            self.critic_3,
-            self.critic_3_target,
-        ]:
-            m.eval()
+        super().set_eval_mode()
+        self.critic_3.eval()
+        self.critic_3_target.eval()
 
     def set_train_mode(self):
-        self.train_mode_enabled = True
-        for m in [
-            self.actor,
-            self.actor_target,
-            self.critic_1,
-            self.critic_1_target,
-            self.critic_2,
-            self.critic_2_target,
-            self.critic_3,
-            self.critic_3_target,
-        ]:
-            m.train()
+        super().set_train_mode()
+        self.critic_3.train()
+        self.critic_3_target.train()
 
