@@ -42,9 +42,8 @@ class GymHedgingEnv(gym.Env):
         return np.asarray(state, dtype=np.float32), {}
 
     def step(self, action):
-        action_scalar = float(np.asarray(action, dtype=np.float32).reshape(-1)[0])
-        next_state, reward, done, info = self.env.step(action_scalar)
-        terminated = bool(done)
-        truncated = False
-        return np.asarray(next_state, dtype=np.float32), float(reward), terminated, truncated, info
+        raise NotImplementedError(
+            "Orchestrator bypasses gym step and uses env.env.apply_action() "
+            "to preserve delayed-reward structure from the paper."
+        )
 
