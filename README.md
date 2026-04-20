@@ -109,7 +109,7 @@ Le notebook `notebooks/runs_dashboard.ipynb` permet:
 
 - la liste des runs disponibles,
 - l'inspection complète d'un run,
-- l'affichage des figures,
+- l'affichage de graphiques générés à la volée depuis les CSV,
 - la comparaison inter-runs via `eval_agent_summary.csv`.
 
 Ouvrir le notebook:

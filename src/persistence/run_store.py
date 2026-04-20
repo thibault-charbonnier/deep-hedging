@@ -20,7 +20,6 @@ class RunContext:
     root_dir: Path
     data_dir: Path
     tables_dir: Path
-    figures_dir: Path
     profile_dir: Path
 
 
@@ -44,7 +43,6 @@ class RunStore:
             root_dir=root,
             data_dir=ensure_dir(root / "data"),
             tables_dir=ensure_dir(root / "tables"),
-            figures_dir=ensure_dir(root / "figures"),
             profile_dir=ensure_dir(root / "profile"),
         )
         if config is not None:
