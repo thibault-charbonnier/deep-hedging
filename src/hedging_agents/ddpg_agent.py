@@ -23,27 +23,25 @@ import torch.nn as nn
 from cpprb import PrioritizedReplayBuffer
 
 from .abstract_agent import AbstractHedgingAgent
-from ._rl_common import CriticMLP, MLP, get_device, hard_update
+from ._rl_common import CriticMLP, MLP, DEVICE, hard_update
 
 
 class _Actor(nn.Module):
     def __init__(self, state_dim, hidden_dims, action_low, action_high):
         super().__init__()
         self.backbone = MLP(state_dim, 1, hidden_dims, output_activation=nn.Tanh())
-        self.register_buffer("a_lo", torch.tensor([action_low], dtype=torch.float32))
-        self.register_buffer("a_hi", torch.tensor([action_high], dtype=torch.float32))
+        self.mid = 0.5 * (action_high + action_low)
+        self.half = 0.5 * (action_high - action_low)
 
     def forward(self, s):
-        mid = 0.5 * (self.a_hi + self.a_lo)
-        half = 0.5 * (self.a_hi - self.a_lo)
-        return mid + half * self.backbone(s)
+        return self.mid + self.half * self.backbone(s)
 
 
 class DeepDPGHedgingAgent(AbstractHedgingAgent):
 
     def __init__(self, agent_cfg: dict[str, Any]) -> None:
         super().__init__(agent_cfg)
-        self.device = get_device()
+        self.device = DEVICE
         self.state_dim = int(agent_cfg.get("state_dim", 4))
         self.hidden_dims = tuple(agent_cfg.get("hidden_dims", [128, 128]))
         self.lr_actor = float(agent_cfg.get("actor_learning_rate", 1e-4))
@@ -195,10 +193,7 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         torch.nn.utils.clip_grad_norm_(self.critic_2.parameters(), self.grad_clip)
         self.critic_2_opt.step()
 
-        prios = (td1.detach().sqrt() + td2.detach().sqrt()).cpu().numpy().reshape(-1)
-        prios = np.abs(prios) + self.per_eps
-        if prios.shape[0] != batch["indexes"].shape[0]:
-            raise ValueError("priorities and indexes must have same length")
+        prios = (td1.detach().sqrt() + td2.detach().sqrt()).cpu().numpy().reshape(-1) + self.per_eps
         self._update_priorities(batch["indexes"], prios)
 
         for p in self.critic_1.parameters():
@@ -233,34 +228,6 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
 
         return float((loss_c1 + loss_c2 + actor_loss.detach()).item())
 
-    def save(self, path):
-        torch.save({
-            "actor": self.actor.state_dict(),
-            "actor_target": self.actor_target.state_dict(),
-            "critic_1": self.critic_1.state_dict(),
-            "critic_1_target": self.critic_1_target.state_dict(),
-            "critic_2": self.critic_2.state_dict(),
-            "critic_2_target": self.critic_2_target.state_dict(),
-            "actor_opt": self.actor_opt.state_dict(),
-            "critic_1_opt": self.critic_1_opt.state_dict(),
-            "critic_2_opt": self.critic_2_opt.state_dict(),
-            "epsilon": self.epsilon,
-            "learn_steps": self.learn_steps,
-        }, path)
-
-    def load(self, path):
-        ckpt = torch.load(path, map_location=self.device)
-        self.actor.load_state_dict(ckpt["actor"])
-        self.actor_target.load_state_dict(ckpt["actor_target"])
-        self.critic_1.load_state_dict(ckpt["critic_1"])
-        self.critic_1_target.load_state_dict(ckpt["critic_1_target"])
-        self.critic_2.load_state_dict(ckpt["critic_2"])
-        self.critic_2_target.load_state_dict(ckpt["critic_2_target"])
-        self.actor_opt.load_state_dict(ckpt["actor_opt"])
-        self.critic_1_opt.load_state_dict(ckpt["critic_1_opt"])
-        self.critic_2_opt.load_state_dict(ckpt["critic_2_opt"])
-        self.epsilon = float(ckpt.get("epsilon", self.epsilon))
-        self.learn_steps = int(ckpt.get("learn_steps", 0))
 
     def set_eval_mode(self):
         self.train_mode_enabled = False

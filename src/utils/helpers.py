@@ -52,19 +52,15 @@ def build_run_id(tag: str = "main") -> str:
     return f"{ts}_{safe_tag}_{short}"
 
 
-def set_global_seed(seed: int, deterministic_torch: bool = True) -> None:
+def set_global_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
-
     if torch is None:
         return
-
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-
-    if deterministic_torch:
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 

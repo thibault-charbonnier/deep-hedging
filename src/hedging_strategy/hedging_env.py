@@ -24,15 +24,15 @@ class HedgingEnv:
 
     def setup_env(self, path_data):
         if isinstance(path_data, dict):
-            self.path_dict = {k: np.asarray(v, dtype=float) for k, v in path_data.items()}
-            self.path_data = self.path_dict["S"]
+            paths = {k: np.asarray(v, dtype=float) for k, v in path_data.items()}
         else:
-            self.path_data = np.asarray(path_data, dtype=float)
-            self.path_dict = {"S": self.path_data}
-        if "sigma" in self.path_dict:
-            self._vol_path = self.path_dict["sigma"]
-        elif "variance" in self.path_dict:
-            self._vol_path = np.sqrt(np.maximum(self.path_dict["variance"], 1e-10))
+            paths = {"S": np.asarray(path_data, dtype=float)}
+
+        self.path_data = paths["S"]
+        if "sigma" in paths:
+            self._vol_path = paths["sigma"]
+        elif "variance" in paths:
+            self._vol_path = np.sqrt(np.maximum(paths["variance"], 1e-10))
         else:
             self._vol_path = np.full_like(self.path_data, self.valuation_sigma)
         self.n_steps = len(self.path_data) - 1
@@ -57,13 +57,10 @@ class HedgingEnv:
             raise RuntimeError("apply_action called after terminal step")
 
         raw = {
-            "i": i,
             "S_i": float(self.path_data[i]),
             "V_i": float(self._V[i]),
             "H_prev": float(self.H_prev),
             "H_new": H_new,
-            "is_initial": bool(i == 0),
-            "is_terminal": bool(i == self.n_steps),
         }
 
         self.H_prev = H_new

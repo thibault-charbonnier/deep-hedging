@@ -13,10 +13,7 @@ from typing import Iterable
 import torch
 import torch.nn as nn
 
-
-def get_device() -> torch.device:
-    # For this project workload (small step-wise tensors), CPU is faster than MPS transfer overhead.
-    return torch.device("cpu")
+DEVICE = torch.device("cpu")
 
 
 # ── Networks ─────────────────────────────────────────────────────────
@@ -46,8 +43,6 @@ class CriticMLP(nn.Module):
         self.net = MLP(state_dim + action_dim, 1, hidden_dims)
 
     def forward(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
-        if action.ndim == 1:
-            action = action.unsqueeze(-1)
         return self.net(torch.cat([state, action], dim=-1))
 
 

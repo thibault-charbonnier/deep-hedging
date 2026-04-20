@@ -38,10 +38,3 @@ class AbstractHedgingAgent(ABC):
     def set_eval_mode(self) -> None:
         raise NotImplementedError
 
-    @abstractmethod
-    def save(self, path: str) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    def load(self, path: str) -> None:
-        raise NotImplementedError

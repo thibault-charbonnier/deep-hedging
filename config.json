@@ -74,7 +74,6 @@
         "agent": "SkewDDPG",
         "benchmark": "BsDelta",
         "seed": 42,
-        "save_figures": true,
         "enable_cprofile": false,
         "profile_top_n": 60
     }

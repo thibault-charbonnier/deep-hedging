@@ -1,25 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
 
 SplitType = Literal["train", "eval_agent", "eval_benchmark"]
-ALL_SPLITS: tuple[SplitType, SplitType, SplitType] = ("train", "eval_agent", "eval_benchmark")
-
-
-def _nanmean(values: list[float]) -> float:
-    return float(np.nanmean(values)) if values else np.nan
-
-
-def _nanstd(values: list[float]) -> float:
-    return float(np.nanstd(values)) if values else np.nan
-
-
-def _nansum(values: list[float]) -> float:
-    return float(np.nansum(values)) if values else np.nan
 
 
 def _nanskewness(values: list[float]) -> float:
@@ -44,22 +31,18 @@ class EpisodeResult:
     episode_idx: int
     path_data: dict[str, np.ndarray]
     times: np.ndarray
-    metadata: dict[str, Any] = field(default_factory=dict)
-
     actions: list[float] = field(default_factory=list)
     rewards: list[float] = field(default_factory=list)
     costs: list[float] = field(default_factory=list)
     trade_costs: list[float] = field(default_factory=list)
     liquidation_costs: list[float] = field(default_factory=list)
     losses: list[float | None] = field(default_factory=list)
-    agent_infos: list[dict[str, Any]] = field(default_factory=list)
 
     def add_step(
         self,
         action: float,
         info: dict[str, Any],
         loss: float | None = None,
-        agent_info: dict[str, Any] | None = None,
     ) -> None:
         self.actions.append(float(action))
         self.rewards.append(float(info.get("reward", np.nan)))
@@ -67,7 +50,6 @@ class EpisodeResult:
         self.trade_costs.append(float(info.get("trade_cost", 0.0)))
         self.liquidation_costs.append(float(info.get("liquidation_cost", 0.0)))
         self.losses.append(None if loss is None else float(loss))
-        self.agent_infos.append({} if agent_info is None else agent_info)
 
     def step_frame(self) -> pd.DataFrame:
         n_steps = len(self.actions)
@@ -104,43 +86,39 @@ class HedgingResult:
     def add_episode(self, episode_result: EpisodeResult, type: SplitType) -> None:
         self.episodes[type].append(episode_result)
 
-    def step_frame(self, split: SplitType | None = None) -> pd.DataFrame:
-        selected: list[SplitType] = [split] if split else list(ALL_SPLITS)
+    def step_frame(self) -> pd.DataFrame:
         frames: list[pd.DataFrame] = []
-        for key in selected:
-            for ep in self.episodes[cast(SplitType, key)]:
+        for eps in self.episodes.values():
+            for ep in eps:
                 frames.append(ep.step_frame())
         return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
-    def episode_table(self, split: SplitType | None = None) -> pd.DataFrame:
-        selected: list[SplitType] = [split] if split else list(ALL_SPLITS)
+    def episode_table(self) -> pd.DataFrame:
         rows: list[dict[str, Any]] = []
-        for key in selected:
-            for ep in self.episodes[cast(SplitType, key)]:
-                total_cost = _nansum(ep.costs)
-                loss_values = (
-                    np.asarray([np.nan if x is None else float(x) for x in ep.losses], dtype=float)
-                    if ep.losses
-                    else np.asarray([], dtype=float)
-                )
+        for split_key, eps in self.episodes.items():
+            for ep in eps:
+                total_cost = float(np.nansum(ep.costs)) if ep.costs else float("nan")
+                loss_values = np.asarray(
+                    [np.nan if x is None else float(x) for x in ep.losses], dtype=float
+                ) if ep.losses else np.asarray([], dtype=float)
                 finite_losses = loss_values[np.isfinite(loss_values)] if loss_values.size > 0 else np.asarray([], dtype=float)
                 rows.append(
                     {
-                        "split": key,
+                        "split": split_key,
                         "episode_idx": ep.episode_idx,
                         "n_steps": len(ep.actions),
                         "total_cost": total_cost,
-                        "mean_step_cost": _nanmean(ep.costs),
-                        "std_step_cost": _nanstd(ep.costs),
-                        "total_trade_cost": _nansum(ep.trade_costs),
-                        "total_liquidation_cost": _nansum(ep.liquidation_costs),
+                        "mean_step_cost": float(np.nanmean(ep.costs)) if ep.costs else float("nan"),
+                        "std_step_cost": float(np.nanstd(ep.costs)) if ep.costs else float("nan"),
+                        "total_trade_cost": float(np.nansum(ep.trade_costs)) if ep.trade_costs else 0.0,
+                        "total_liquidation_cost": float(np.nansum(ep.liquidation_costs)) if ep.liquidation_costs else 0.0,
                         "mean_loss": float(finite_losses.mean()) if finite_losses.size > 0 else np.nan,
                     }
                 )
         return pd.DataFrame(rows)
 
-    def split_summary(self, split: SplitType | None = None, risk_lambda: float = 1.5) -> pd.DataFrame:
-        ep = self.episode_table(split=split)
+    def split_summary(self, risk_lambda: float = 1.5) -> pd.DataFrame:
+        ep = self.episode_table()
         if ep.empty:
             return pd.DataFrame()
         rows: list[dict[str, Any]] = []

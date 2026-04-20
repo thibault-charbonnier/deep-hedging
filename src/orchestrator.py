@@ -1,7 +1,7 @@
 from __future__ import annotations
 import logging
 import numpy as np
-from .hedging_strategy.gym_hedging_env import GymHedgingEnv
+from .hedging_strategy.hedging_env import HedgingEnv
 from .hedging_result import HedgingResult, EpisodeResult
 
 logger = logging.getLogger(__name__)
@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class Orchestrator:
     def __init__(self, config, process_type, agent_type, benchmark_type):
         self.config = config
-        self.env = GymHedgingEnv(config)
+        self.env = HedgingEnv(config)
         self.process = process_type.value(config["simulation"])
         self.agent = agent_type.value(config["hedging_agent"])
         self.benchmark = benchmark_type.value(config)
@@ -40,12 +40,11 @@ class Orchestrator:
             self.eval_paths = self.process.simulate_paths(self.eval_episodes)
 
     def _run_episode(self, path, policy_fn, learn, record_fn):
-        env = self.env.env
-        state = env.setup_env(path)
-        n = env.n_steps
+        state = self.env.setup_env(path)
+        n = self.env.n_steps
 
         a0 = float(policy_fn(state))
-        state_next, raw0 = env.apply_action(a0)
+        state_next, raw0 = self.env.apply_action(a0)
         setup_cost = self.kappa * raw0["S_i"] * abs(raw0["H_new"] - raw0["H_prev"])
         pending_setup_reward = -setup_cost
 
@@ -58,7 +57,7 @@ class Orchestrator:
         for step_idx in range(1, n + 1):
             is_terminal_action = step_idx == n
             ai = float(policy_fn(state))
-            state_next, raw_i = env.apply_action(ai)
+            state_next, raw_i = self.env.apply_action(ai)
 
             v_curr = raw_i["V_i"]
             s_curr = raw_i["S_i"]

@@ -89,7 +89,7 @@ Le fichier `config.json` contient:
 - `hedging_agent`: hyperparamètres DDPG (`actor_learning_rate`, `critic_learning_rate`, `learning_batch_size`, etc.).
   - Pour `SkewDPG`: `skew_lambda`, `skew_penalty`, `skew_eps`.
   - Gradient clipping: `grad_clip` (global) et `grad_clip_q3` (critic Q3).
-- `run`: paramètres d'exécution (`mode`, `save_figures`, `enable_cprofile`, profils smoke).
+- `run`: paramètres d'exécution (`mode`, `enable_cprofile`, profils smoke).
 
 ## Outputs produits à chaque run
 
@@ -99,7 +99,6 @@ Chaque exécution crée `outputs/<run_id>/`:
 - `data/*_steps.csv`: données pas-à-pas (actions, coûts, rewards).
 - `tables/*_episodes.csv`: agrégation par épisode.
 - `tables/*_summary.csv`: métriques synthétiques (`mean_total_cost`, `std_total_cost`, `y_objective`).
-- `figures/*`: graphes prêts à être utilisés.
 - `profile/cprofile.txt` et `profile/cprofile.prof`: profilage CPU.
 
 Le fichier `outputs/runs_index.csv` contient l'historique de tous les runs.
