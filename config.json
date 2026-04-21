@@ -35,15 +35,15 @@
     },
     "training_schedule":
     {
-        "train_episodes": 5000,
-        "eval_episodes": 1500,
+        "train_episodes": 30000,
+        "eval_episodes": 5000,
         "update_frequency": 1
     },
     "hedging_agent":
     {
-        "exploration_noise_start": 0.30,
+        "exploration_noise_start": 0.20,
         "exploration_noise_end": 0.05,
-        "exploration_noise_decay": 0.9999,
+        "exploration_noise_decay": 0.99995,
         "actor_learning_rate": 0.0001,
         "critic_learning_rate": 0.001,
         "discount_factor": 1.0,
