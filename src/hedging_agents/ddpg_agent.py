@@ -4,13 +4,11 @@ Deep DPG with dual critics — Cao et al. (2021) Sections 2.6, 3.4, 4.
 Design choices:
   - critic_1 → E[C_t],  critic_2 → E[C_t²]
   - actor minimises F = Q1 + λ √(Q2 - Q1²)
-  - Gaussian additive exploration noise (Lillicrap et al. 2016):
-      a_t = π(s_t) + σ · N(0, 1), with σ decaying over training.
-      The paper (Section 2.6) describes ε-greedy, but this is a
-      simplification inherited from discrete action spaces. In
-      continuous control, Gaussian noise on the deterministic
-      policy is the standard (see Lillicrap et al. 2016, cited
-      by Cao et al.).
+  - ε-greedy exploration (Cao et al. 2021, Sections 2.4 and 2.6):
+      with probability ε, sample a uniform random action in the bounded
+      action space; with probability 1-ε, follow the deterministic policy.
+      This is less common than Gaussian action noise in continuous DDPG,
+      but directly follows the paper's specification.
   - Periodic hard copy of target networks (Section 2.5):
       "deep Q-learning keeps a separate copy of the Q-function for
        constructing the update target, and only updates this copy
@@ -46,7 +44,7 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
     def __init__(self, agent_cfg: dict[str, Any]) -> None:
         super().__init__(agent_cfg)
         self.device = DEVICE
-        self.state_dim = int(agent_cfg.get("state_dim", 4))
+        self.state_dim = int(agent_cfg.get("state_dim", 3))
         self.hidden_dims = tuple(agent_cfg.get("hidden_dims", [128, 128]))
         self.lr_actor = float(agent_cfg.get("actor_learning_rate", 1e-4))
         self.lr_critic = float(agent_cfg.get("critic_learning_rate", 1e-3))
@@ -58,12 +56,13 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         self.action_low = float(agent_cfg.get("action_low", 0.0))
         self.action_high = float(agent_cfg.get("action_high", 1.0))
 
-        # Gaussian additive exploration noise (Lillicrap et al. 2016).
-        # At each train step, the policy returns π(s) + noise_std * N(0, 1),
-        # then clipped to [action_low, action_high].
-        self.noise_std = float(agent_cfg.get("exploration_noise_start", 0.30))
-        self.noise_std_min = float(agent_cfg.get("exploration_noise_end", 0.05))
-        self.noise_decay = float(agent_cfg.get("exploration_noise_decay", 0.9995))
+        # ε-greedy exploration (Cao et al. 2021, Sections 2.4 and 2.6)
+        # With probability ε: action uniformly random in [action_low, action_high]
+        # With probability 1-ε: action from the policy
+        # ε decays multiplicatively from epsilon_start towards epsilon_end
+        self.epsilon = float(agent_cfg.get("epsilon_start", 1.0))
+        self.epsilon_min = float(agent_cfg.get("epsilon_end", 0.05))
+        self.epsilon_decay = float(agent_cfg.get("epsilon_decay", 0.9995))
 
         # Soft target updates (Lillicrap et al. 2016, Section 3).
         # θ' ← τ·θ + (1-τ)·θ' applied at every learn step.
@@ -141,13 +140,19 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         }
 
     def act(self, state, eval_mode=False):
-        # ── Gaussian additive exploration (Lillicrap et al. 2016) ────
-        # a = π(s) + σ · N(0, 1), clipped to [action_low, action_high].
-        # In eval mode, no noise is added.
+        # In eval mode, no exploration: always follow the deterministic policy.
+        if eval_mode or not self.train_mode_enabled:
+            with torch.no_grad():
+                a = self.actor(self._st(state)).squeeze(0).cpu().numpy()[0]
+            return float(np.clip(a, self.action_low, self.action_high))
+
+        # ε-greedy: with probability ε, sample uniformly in the action space;
+        # with probability 1-ε, follow the policy.
+        if np.random.rand() < self.epsilon:
+            return float(np.random.uniform(self.action_low, self.action_high))
+
         with torch.no_grad():
             a = self.actor(self._st(state)).squeeze(0).cpu().numpy()[0]
-        if (not eval_mode) and self.train_mode_enabled:
-            a = a + self.noise_std * np.random.randn()
         return float(np.clip(a, self.action_low, self.action_high))
 
     def store_transition(self, state, action, reward, next_state, done):
@@ -229,7 +234,7 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         soft_update(self.critic_2_target, self.critic_2, self.tau)
 
         if self.train_mode_enabled:
-            self.noise_std = max(self.noise_std_min, self.noise_std * self.noise_decay)
+            self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 
         return float((loss_c1 + loss_c2 + actor_loss.detach()).item())
 

@@ -18,8 +18,8 @@ class BSDeltaBenchmark:
         self.maturity = float(config["simulation"]["maturity"])
 
     def __call__(self, state: np.ndarray) -> float:
-        _, log_m, norm_ttm, _ = state
-        spot = self.bs.K * float(np.exp(log_m))
-        t = self.maturity * (1.0 - float(norm_ttm))
+        _, spot, ttm = state
+        spot = float(spot)
+        t = self.maturity - float(ttm)
         _, delta = self.bs.price_and_delta(spot=spot, t=t, sigma=self.sigma)
         return float(-self.position_sign * delta)

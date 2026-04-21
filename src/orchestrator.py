@@ -1,4 +1,5 @@
 from __future__ import annotations
+import inspect
 import logging
 import numpy as np
 from .hedging_strategy.hedging_env import HedgingEnv
@@ -43,7 +44,7 @@ class Orchestrator:
         state = self.env.setup_env(path)
         n = self.env.n_steps
 
-        a0 = float(policy_fn(state))
+        a0 = float(policy_fn(state, 0))
         state_next, raw0 = self.env.apply_action(a0)
         setup_cost = self.kappa * raw0["S_i"] * abs(raw0["H_new"] - raw0["H_prev"])
         pending_setup_reward = -setup_cost
@@ -59,7 +60,7 @@ class Orchestrator:
             if is_terminal_action:
                 ai = 0.0
             else:
-                ai = float(policy_fn(state))
+                ai = float(policy_fn(state, step_idx))
             state_next, raw_i = self.env.apply_action(ai)
 
             v_curr = raw_i["V_i"]
@@ -120,7 +121,7 @@ class Orchestrator:
             def record(_step_idx, action, _reward, info, loss):
                 er.add_step(action=action, info=info, loss=loss)
 
-            policy = lambda s: self.agent.act(s, eval_mode=False)
+            policy = lambda s, _step_idx: self.agent.act(s, eval_mode=False)
             self._run_episode(path, policy_fn=policy, learn=True, record_fn=record)
             res.add_episode(er, type="train")
         return res
@@ -136,7 +137,7 @@ class Orchestrator:
             def record(_step_idx, action, _reward, info, _loss):
                 er.add_step(action=action, info=info)
 
-            policy = lambda s: self.agent.act(s, eval_mode=True)
+            policy = lambda s, _step_idx: self.agent.act(s, eval_mode=True)
             self._run_episode(path, policy_fn=policy, learn=False, record_fn=record)
             res.add_episode(er, type="eval_agent")
         return res
@@ -149,10 +150,25 @@ class Orchestrator:
             path = self._ep_path(self.eval_paths, ep)
             er = EpisodeResult(split="eval_benchmark", episode_idx=ep, times=self._episode_times(path), path_data=path)
 
+            sigma_path = None
+            if "sigma" in path:
+                sigma_path = np.asarray(path["sigma"], dtype=float)
+            elif "variance" in path:
+                sigma_path = np.sqrt(np.maximum(np.asarray(path["variance"], dtype=float), 1e-10))
+
+            bench_call_arity = len(inspect.signature(bench.__call__).parameters)
+
             def record(_step_idx, action, _reward, info, _loss):
                 er.add_step(action=action, info=info)
 
-            policy = lambda s: bench(s)
+            def policy(s, step_idx):
+                if bench_call_arity >= 2:
+                    sigma_t = None
+                    if sigma_path is not None:
+                        sigma_t = float(sigma_path[min(step_idx, len(sigma_path) - 1)])
+                    return bench(s, sigma_t)
+                return bench(s)
+
             self._run_episode(path, policy_fn=policy, learn=False, record_fn=record)
             res.add_episode(er, type="eval_benchmark")
         return res

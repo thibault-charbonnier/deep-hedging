@@ -177,7 +177,7 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
         soft_update(self.critic_3_target, self.critic_3, self.tau)
 
         if self.train_mode_enabled:
-            self.noise_std = max(self.noise_std_min, self.noise_std * self.noise_decay)
+            self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 
         return float((loss_c1 + loss_c2 + loss_c3 + actor_loss.detach()).item())
 

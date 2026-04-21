@@ -1,7 +1,6 @@
 """Raw hedging environment exposing delayed-reward ingredients (paper Section 3.1)."""
 from __future__ import annotations
 from typing import Any
-import math
 import numpy as np
 from ..valuation.bs_valuation import BSValuation
 
@@ -29,12 +28,6 @@ class HedgingEnv:
             paths = {"S": np.asarray(path_data, dtype=float)}
 
         self.path_data = paths["S"]
-        if "sigma" in paths:
-            self._vol_path = paths["sigma"]
-        elif "variance" in paths:
-            self._vol_path = np.sqrt(np.maximum(paths["variance"], 1e-10))
-        else:
-            self._vol_path = np.full_like(self.path_data, self.valuation_sigma)
         self.n_steps = len(self.path_data) - 1
         self.times = np.linspace(0.0, self.maturity, len(self.path_data))
 
@@ -74,13 +67,12 @@ class HedgingEnv:
 
     def _build_state(self, step, hedge_pos):
         idx = min(step, len(self.path_data) - 1)
-        t = self.times[min(step, len(self.times) - 1)]
-        spot, vol = self.path_data[idx], self._vol_path[idx]
-        ttm = max(self.maturity - t, 0.0)
+        t = float(self.times[min(step, len(self.times) - 1)])
+        spot = float(self.path_data[idx])
+        ttm = float(np.maximum(self.maturity - t, 0.0))
         return np.asarray([
             hedge_pos,
-            math.log(spot / self.K),
-            ttm / self.maturity if self.maturity > 0 else 0.0,
-            vol / self.valuation_sigma,
+            spot,
+            ttm,
         ], dtype=np.float32)
 
