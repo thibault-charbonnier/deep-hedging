@@ -88,7 +88,6 @@ Le fichier `config.json` contient:
 - `training_schedule`: nombre d'épisodes train/eval.
 - `hedging_agent`: hyperparamètres DDPG (`actor_learning_rate`, `critic_learning_rate`, `learning_batch_size`, etc.).
   - Pour `SkewDPG`: `skew_lambda`, `skew_penalty`, `skew_eps`.
-  - Gradient clipping: `grad_clip` (global) et `grad_clip_q3` (critic Q3).
 - `run`: paramètres d'exécution (`mode`, `enable_cprofile`, profils smoke).
 
 ## Outputs produits à chaque run

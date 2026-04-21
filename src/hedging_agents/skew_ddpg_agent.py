@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
-    """DDPG variant using Q1/Q2/Q3 with gradient clipping for stability."""
+    """DDPG variant using Q1/Q2/Q3 to control skewness of hedging cost."""
 
     def __init__(self, agent_cfg: dict[str, Any]) -> None:
         super().__init__(agent_cfg)
@@ -35,7 +35,6 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
             raise ValueError(
                 f"skew_transform must be 'cbrt' or 'std', got '{self.skew_transform}'"
             )
-        self.grad_clip_q3 = float(agent_cfg.get("grad_clip_q3", self.grad_clip))
 
         # Third critic for E[C^3]
         self.critic_3 = CriticMLP(self.state_dim, 1, self.hidden_dims).to(self.device)
@@ -105,17 +104,14 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
 
         self.critic_1_opt.zero_grad()
         loss_c1.backward()
-        torch.nn.utils.clip_grad_norm_(self.critic_1.parameters(), self.grad_clip)
         self.critic_1_opt.step()
 
         self.critic_2_opt.zero_grad()
         loss_c2.backward()
-        torch.nn.utils.clip_grad_norm_(self.critic_2.parameters(), self.grad_clip)
         self.critic_2_opt.step()
 
         self.critic_3_opt.zero_grad()
         loss_c3.backward()
-        torch.nn.utils.clip_grad_norm_(self.critic_3.parameters(), self.grad_clip_q3)
         self.critic_3_opt.step()
 
         prios = (td1.detach().sqrt() + td2.detach().sqrt() + td3.detach().sqrt()).cpu().numpy().reshape(-1) + self.per_eps
@@ -160,7 +156,6 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
 
         self.actor_opt.zero_grad()
         actor_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), self.grad_clip)
         self.actor_opt.step()
 
         for p in self.critic_1.parameters():
