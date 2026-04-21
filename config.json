@@ -35,15 +35,15 @@
     },
     "training_schedule":
     {
-        "train_episodes": 100,
-        "eval_episodes": 50,
+        "train_episodes": 5000,
+        "eval_episodes": 1500,
         "update_frequency": 1
     },
     "hedging_agent":
     {
         "exploration_noise_start": 0.30,
         "exploration_noise_end": 0.05,
-        "exploration_noise_decay": 0.9995,
+        "exploration_noise_decay": 0.9999,
         "actor_learning_rate": 0.0001,
         "critic_learning_rate": 0.001,
         "discount_factor": 1.0,
@@ -54,7 +54,7 @@
         "grad_clip": 1.0,
         "grad_clip_q3": 0.5,
         "risk_lambda": 1.5,
-        "skew_lambda": 0.1,
+        "skew_lambda": 0.01,
         "skew_eps": 1e-8,
         "skew_penalty": "positive",
         "skew_transform": "cbrt",
@@ -71,8 +71,8 @@
     {
         "maturity": 0.0833333333,
         "rebalancing": 1,
-        "process": "SVJ",
-        "agent": "SkewDDPG",
+        "process": "GBM",
+        "agent": "DeepDPG",
         "benchmark": "BsDelta",
         "seed": 42,
         "enable_cprofile": false,
