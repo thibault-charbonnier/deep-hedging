@@ -104,14 +104,17 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
 
         self.critic_1_opt.zero_grad()
         loss_c1.backward()
+        self._clip_grads(self.critic_1)
         self.critic_1_opt.step()
 
         self.critic_2_opt.zero_grad()
         loss_c2.backward()
+        self._clip_grads(self.critic_2)
         self.critic_2_opt.step()
 
         self.critic_3_opt.zero_grad()
         loss_c3.backward()
+        self._clip_grads(self.critic_3)
         self.critic_3_opt.step()
 
         prios = (td1.detach().sqrt() + td2.detach().sqrt() + td3.detach().sqrt()).cpu().numpy().reshape(-1) + self.per_eps
@@ -156,6 +159,7 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
 
         self.actor_opt.zero_grad()
         actor_loss.backward()
+        self._clip_grads(self.actor)
         self.actor_opt.step()
 
         for p in self.critic_1.parameters():

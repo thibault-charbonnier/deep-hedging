@@ -35,9 +35,9 @@
     },
     "training_schedule":
     {
-        "train_episodes": 5000,
-        "eval_episodes": 1500,
-        "update_frequency": 1
+        "train_episodes": 30000,
+        "eval_episodes": 8000,
+        "update_frequency": 5
     },
     "hedging_agent":
     {
@@ -49,8 +49,9 @@
         "discount_factor": 1.0,
         "learning_batch_size": 128,
         "replay_capacity": 100000,
-        "min_buffer_size": 128,
+        "min_buffer_size": 1024,
         "target_update_frequency": 100,
+        "grad_clip_norm": 1.0,
         "risk_lambda": 1.5,
         "skew_lambda": 0.01,
         "skew_eps": 1e-8,

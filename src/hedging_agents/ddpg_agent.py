@@ -67,6 +67,7 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         # matching the separate-target copy schedule popularized in DQN
         # (Mnih et al. 2015).
         self.target_update_frequency = int(agent_cfg.get("target_update_frequency", 1000))
+        self.grad_clip_norm = float(agent_cfg.get("grad_clip_norm", 1.0))
 
         # networks
         self.actor = _Actor(self.state_dim, self.hidden_dims, self.action_low, self.action_high).to(self.device)
@@ -116,6 +117,10 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
 
     def _update_priorities(self, indices: np.ndarray, priorities: np.ndarray) -> None:
         self.replay_buffer.update_priorities(indices, priorities)
+
+    def _clip_grads(self, module: nn.Module) -> None:
+        if self.grad_clip_norm > 0:
+            torch.nn.utils.clip_grad_norm_(module.parameters(), max_norm=self.grad_clip_norm)
 
     def _sample_batch_tensors(self) -> dict[str, Any]:
         self.per_frame += 1
@@ -195,10 +200,12 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
 
         self.critic_1_opt.zero_grad()
         loss_c1.backward()
+        self._clip_grads(self.critic_1)
         self.critic_1_opt.step()
 
         self.critic_2_opt.zero_grad()
         loss_c2.backward()
+        self._clip_grads(self.critic_2)
         self.critic_2_opt.step()
 
         prios = (td1.detach().sqrt() + td2.detach().sqrt()).cpu().numpy().reshape(-1) + self.per_eps
@@ -217,6 +224,7 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
 
         self.actor_opt.zero_grad()
         actor_loss.backward()
+        self._clip_grads(self.actor)
         self.actor_opt.step()
 
         for p in self.critic_1.parameters():
