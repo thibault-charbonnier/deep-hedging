@@ -45,6 +45,7 @@ class Orchestrator:
         n = self.env.n_steps
 
         # Setup transition: (s_0, a_0, R_setup, s_1, done=False)
+        # R_setup = -kappa*S_0*|H_0 - 0| depends only on a_0 = H_0, already Markovian.
         a0 = float(policy_fn(state, 0))
         next_state, raw0 = self.env.apply_action(a0)
         setup_cost = self.kappa * raw0["S_i"] * abs(raw0["H_new"] - raw0["H_prev"])
@@ -57,20 +58,16 @@ class Orchestrator:
             if self.train_step_count % self.update_frequency == 0:
                 setup_loss = self.agent.learn()
 
-        setup_info = {
-            "reward": setup_reward,
-            "cost": setup_cost,
-            "trade_cost": setup_cost,
-            "liquidation_cost": 0.0,
-            "spot_t": raw0["S_i"],
-            "spot_next": raw0["S_i"],
-            "hedge": raw0["H_new"],
-        }
-        record_fn(-1, a0, setup_reward, setup_info, setup_loss)
+        record_fn(-1, a0, setup_reward, {
+            "reward": setup_reward, "cost": setup_cost,
+            "trade_cost": setup_cost, "liquidation_cost": 0.0,
+            "spot_t": raw0["S_i"], "spot_next": raw0["S_i"], "hedge": raw0["H_new"],
+        }, setup_loss)
 
         total_reward = setup_reward
         state, prev_raw = next_state, raw0
 
+        # Main loop: Markovian transitions (s_i, a_i, R_i, s_{i+1}, done)
         for step_idx in range(1, n + 1):
             is_terminal = step_idx == n
             if is_terminal:
