@@ -44,19 +44,15 @@ class Orchestrator:
         state = self.env.setup_env(path)
         n = self.env.n_steps
 
+        # Setup transition: (s_0, a_0, R_setup, s_1, done=False)
         a0 = float(policy_fn(state, 0))
-        state_next, raw0 = self.env.apply_action(a0)
+        next_state, raw0 = self.env.apply_action(a0)
         setup_cost = self.kappa * raw0["S_i"] * abs(raw0["H_new"] - raw0["H_prev"])
         setup_reward = -setup_cost
 
-        prev_state = state
-        prev_action = a0
-        prev_raw = raw0
-        state = state_next
-
         setup_loss = None
         if learn:
-            self.agent.store_transition(prev_state, prev_action, setup_reward, state, False)
+            self.agent.store_transition(state, a0, setup_reward, next_state, False)
             self.train_step_count += 1
             if self.train_step_count % self.update_frequency == 0:
                 setup_loss = self.agent.learn()
@@ -73,56 +69,56 @@ class Orchestrator:
         record_fn(-1, a0, setup_reward, setup_info, setup_loss)
 
         total_reward = setup_reward
+        state, prev_raw = next_state, raw0
+
         for step_idx in range(1, n + 1):
-            is_terminal_step = step_idx == n
-            if is_terminal_step:
+            is_terminal = step_idx == n
+            if is_terminal:
                 # Contractual close-out: no policy decision at terminal step.
                 ai = 0.0
             else:
                 ai = float(policy_fn(state, step_idx))
-            state_next, raw_i = self.env.apply_action(ai)
+            next_state, raw_i = self.env.apply_action(ai)
 
             v_curr = raw_i["V_i"]
             s_curr = raw_i["S_i"]
             v_prev = prev_raw["V_i"]
             s_prev = prev_raw["S_i"]
-            h_prev = prev_raw["H_new"]
+            h_prev = raw_i["H_prev"]
             h_curr = raw_i["H_new"]
 
-            liquidation_cost = 0.0
-            if is_terminal_step:
-                trade_cost_i = 0.0
+            if is_terminal:
+                trade_cost = 0.0
                 liquidation_cost = self.kappa * s_curr * abs(h_prev)
-                reward_i = (v_curr - v_prev) + h_prev * (s_curr - s_prev) - liquidation_cost
+                reward = (v_curr - v_prev) + h_prev * (s_curr - s_prev) - liquidation_cost
             else:
-                trade_cost_i = self.kappa * s_curr * abs(h_curr - h_prev)
-                reward_i = (v_curr - v_prev) + h_prev * (s_curr - s_prev) - trade_cost_i
+                trade_cost = self.kappa * s_curr * abs(h_curr - h_prev)
+                liquidation_cost = 0.0
+                reward = (v_curr - v_prev) + h_prev * (s_curr - s_prev) - trade_cost
 
-            total_reward += reward_i
-            done = is_terminal_step
-            current_loss = None
+            total_reward += reward
+            loss = None
 
             if learn:
-                self.agent.store_transition(prev_state, prev_action, reward_i, state, done)
+                buffer_next = next_state if next_state is not None else state
+                self.agent.store_transition(state, ai, reward, buffer_next, is_terminal)
                 self.train_step_count += 1
                 if self.train_step_count % self.update_frequency == 0:
-                    current_loss = self.agent.learn()
+                    loss = self.agent.learn()
 
             info = {
                 "spot_t": s_prev,
                 "spot_next": s_curr,
                 "hedge": h_curr,
-                "trade_cost": trade_cost_i,
+                "trade_cost": trade_cost,
                 "liquidation_cost": liquidation_cost,
-                "reward": reward_i,
-                "cost": -reward_i,
+                "reward": reward,
+                "cost": -reward,
             }
-            record_fn(step_idx - 1, prev_action, reward_i, info, current_loss)
+            record_fn(step_idx - 1, ai, reward, info, loss)
 
-            prev_state = state
-            prev_action = ai
             prev_raw = raw_i
-            state = state_next
+            state = next_state
 
         return total_reward
 
