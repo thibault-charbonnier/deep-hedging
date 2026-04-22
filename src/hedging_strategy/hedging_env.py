@@ -109,8 +109,3 @@ class HedgingEnv:
             vol / self.valuation_sigma,
         ], dtype=np.float32)
 
-    def _derivative_value(self, step):
-        p, d = self.valuation_engine.price_and_delta(
-            spot=float(self.path_data[step]), t=float(self.times[step]),
-            sigma=self.valuation_sigma)
-        return self.position_sign * float(p), -self.position_sign * float(d)
