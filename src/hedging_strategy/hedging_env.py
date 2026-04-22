@@ -66,10 +66,10 @@ class HedgingEnv:
         return next_state, raw
 
     def _build_state(self, step, hedge_pos):
-        """Return state as [holding, moneyness=S/K, ttm_norm=ttm/maturity].
+        """Return state as [holding, log_moneyness=log(S/K), ttm_norm=ttm/maturity].
 
         The holding stays in its native scale (fraction of underlying, typically
-        in [0, 1.2]). The moneyness and normalized time-to-maturity are
+        in [0, 1]). The moneyness and normalized time-to-maturity are
         dimensionless and lie in comparable ranges, which is suitable for MLP
         inputs without further preprocessing.
         """
@@ -77,11 +77,11 @@ class HedgingEnv:
         t = float(self.times[min(step, len(self.times) - 1)])
         spot = float(self.path_data[idx])
         ttm = float(np.maximum(self.maturity - t, 0.0))
-        moneyness = spot / self.K
+        log_moneyness = float(np.log(spot / self.K))
         ttm_norm = ttm / self.maturity if self.maturity > 0 else 0.0
         return np.asarray([
             hedge_pos,
-            moneyness,
+            log_moneyness,
             ttm_norm,
         ], dtype=np.float32)
 

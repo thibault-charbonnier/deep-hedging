@@ -91,6 +91,7 @@ Thumbs.db
 data/
 artifacts/
 reports/
+outputs/
 
 # Model / experiment checkpoints
 checkpoints/

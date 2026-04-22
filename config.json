@@ -43,7 +43,7 @@
     {
         "epsilon_start": 1.0,
         "epsilon_end": 0.05,
-        "epsilon_decay": 0.99995,
+        "epsilon_decay": 0.9995,
         "actor_learning_rate": 0.0001,
         "critic_learning_rate": 0.001,
         "discount_factor": 1.0,

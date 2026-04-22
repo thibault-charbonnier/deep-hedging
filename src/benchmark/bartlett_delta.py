@@ -25,8 +25,8 @@ class BartlettDeltaBenchmark:
         self.rho = float(config["simulation"]["sabr"]["rho"])
 
     def __call__(self, state: np.ndarray, sigma_t: float | None = None) -> float:
-        _, moneyness, ttm_norm = state
-        spot = float(moneyness) * self.K
+        _, log_moneyness, ttm_norm = state
+        spot = self.K * float(np.exp(log_moneyness))
         ttm = float(ttm_norm) * self.maturity
         sigma_t = self.sigma_ref if sigma_t is None else float(sigma_t)
 

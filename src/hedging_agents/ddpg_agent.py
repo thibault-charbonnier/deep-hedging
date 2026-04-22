@@ -45,15 +45,6 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         super().__init__(agent_cfg)
         self.device = DEVICE
         self.state_dim = int(agent_cfg.get("state_dim", 3))
-        # Observation normalization constants (applied inside the agent only).
-        # The environment returns raw state [holding, spot, ttm]; the agent
-        # normalises it internally to [holding, spot/K, ttm/maturity] before
-        # passing through the network. This is a pure scaling convenience for
-        # the MLP, no semantic change to the paper's state definition.
-        # The moneyness spot/K is centered on 1.0 for ATM options and typically
-        # lies in [0.7, 1.3], which plays well with the MLP's weight init.
-        self.obs_strike = float(agent_cfg.get("obs_strike", 100.0))
-        self.obs_maturity = float(agent_cfg.get("obs_maturity", 1.0))
         self.hidden_dims = tuple(agent_cfg.get("hidden_dims", [128, 128]))
         self.lr_actor = float(agent_cfg.get("actor_learning_rate", 1e-4))
         self.lr_critic = float(agent_cfg.get("critic_learning_rate", 1e-3))
@@ -118,28 +109,7 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         self.learn_steps = 0
 
     def _st(self, state):
-        normalized = self._normalize_state(state)
-        return torch.as_tensor(normalized, device=self.device).unsqueeze(0)
-
-    def _normalize_state(self, state: np.ndarray) -> np.ndarray:
-        """Normalize raw env state [holding, spot, ttm] → [holding, spot/K, ttm/maturity].
-
-        Applied transparently on every read from the env, both for single-state
-        inference in `act` and for batch tensors in `learn`. The replay buffer
-        stores raw states; normalization happens on sample, so the buffer stays
-        consistent even if obs_strike / obs_maturity were to change.
-        """
-        arr = np.asarray(state, dtype=np.float32)
-        if arr.ndim == 1:
-            out = arr.copy()
-            out[1] = out[1] / self.obs_strike
-            out[2] = out[2] / self.obs_maturity
-            return out
-        # batch case: arr shape (B, state_dim)
-        out = arr.copy()
-        out[:, 1] = out[:, 1] / self.obs_strike
-        out[:, 2] = out[:, 2] / self.obs_maturity
-        return out
+        return torch.as_tensor(np.asarray(state, dtype=np.float32), device=self.device).unsqueeze(0)
 
     def _replay_size(self) -> int:
         return int(self.replay_buffer.get_stored_size())
@@ -159,14 +129,10 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         weights = torch.as_tensor(batch["weights"], dtype=torch.float32, device=self.device).reshape(-1)
         indexes = np.asarray(batch["indexes"], dtype=np.int64).reshape(-1)
         return {
-            "states": torch.as_tensor(
-                self._normalize_state(batch["obs"]), dtype=torch.float32, device=self.device
-            ),
+            "states": torch.as_tensor(batch["obs"], dtype=torch.float32, device=self.device),
             "actions": torch.as_tensor(batch["act"], dtype=torch.float32, device=self.device).reshape(-1, 1),
             "rewards": rewards,
-            "next_states": torch.as_tensor(
-                self._normalize_state(batch["next_obs"]), dtype=torch.float32, device=self.device
-            ),
+            "next_states": torch.as_tensor(batch["next_obs"], dtype=torch.float32, device=self.device),
             "dones": dones,
             "weights": weights,
             "indexes": indexes,
