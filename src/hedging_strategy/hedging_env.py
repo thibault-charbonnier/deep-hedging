@@ -54,37 +54,52 @@ class HedgingEnv:
         self.i = 0
         self.v_prev = float(self._precomputed_v[0])
         self.h_prev = 0.0
-        self.is_first_step = True
+        self._pending_setup_reward = 0.0
         self.episode_reward = 0.0
         self.episode_cost = 0.0
         return self._build_state(0, 0.0)
 
+    def set_initial_hedge(self, H0: float) -> None:
+        """Establish the initial hedge at t=0.
+
+        Corresponds to the paper's setup reward -kappa*|S_0*H_0|.
+        Must be called once after setup_env() and before step().
+        """
+        H0 = float(H0)
+        S0 = float(self.path_data[0])
+        self._pending_setup_reward = -self.transac_cost * abs(S0 * H0)
+        self.h_prev = H0
+
     def step(self, hedge: float):
         hedge = float(hedge)
         i = self.i
+        H_i = self.h_prev
+        H_next = hedge
         spot_t = float(self.path_data[i])
         spot_next = float(self.path_data[i + 1])
-        # Paper: initial setup cost uses S_0, subsequent use S_{i+1}
-        if self.is_first_step:
-            trade_cost = self.transac_cost * spot_t * abs(hedge - self.h_prev)
-            self.is_first_step = False
-        else:
-            trade_cost = self.transac_cost * spot_next * abs(hedge - self.h_prev)
-        v_next = float(self._precomputed_v[i + 1])
-        reward_raw = (v_next - self.v_prev) + hedge * (spot_next - spot_t) - trade_cost
+        V_i = float(self._precomputed_v[i])
+        V_next = float(self._precomputed_v[i + 1])
+
+        trade_cost = self.transac_cost * abs(spot_next * (H_next - H_i))
+        reward = (V_next - V_i) + H_i * (spot_next - spot_t) - trade_cost
+
+        if self._pending_setup_reward != 0.0:
+            reward += self._pending_setup_reward
+            self._pending_setup_reward = 0.0
+
         done = i == self.n_steps - 1
         liquidation_cost = 0.0
         if done:
-            liquidation_cost = self.transac_cost * spot_next * abs(hedge)
-            reward_raw -= liquidation_cost
-        reward = reward_raw
+            liquidation_cost = self.transac_cost * spot_next * abs(H_next)
+            reward -= liquidation_cost
+
         self.episode_reward += reward
         self.episode_cost += -reward
         self.i += 1
-        self.h_prev = 0.0 if done else hedge
-        self.v_prev = v_next
+        self.h_prev = 0.0 if done else H_next
+        self.v_prev = V_next
         next_state = self._build_state(self.i, self.h_prev)
-        info = {"spot_t": spot_t, "spot_next": spot_next, "hedge": hedge,
+        info = {"spot_t": spot_t, "spot_next": spot_next, "hedge": H_next,
                 "trade_cost": trade_cost, "liquidation_cost": liquidation_cost,
                 "reward": reward, "cost": -reward,
                 "episode_reward": self.episode_reward, "episode_cost": self.episode_cost}

@@ -71,14 +71,24 @@ class EpisodeResult:
 
     def step_frame(self) -> pd.DataFrame:
         n_steps = len(self.actions)
+        if n_steps == len(self.times):
+            time = np.concatenate(([self.times[0]], self.times[:-1]))
+            time_next = np.concatenate(([self.times[0]], self.times[1:]))
+            spot = np.concatenate(([self.path_data["S"][0]], self.path_data["S"][:-1]))
+            spot_next = np.concatenate(([self.path_data["S"][0]], self.path_data["S"][1:]))
+        else:
+            time = self.times[:n_steps]
+            time_next = self.times[1 : n_steps + 1]
+            spot = self.path_data["S"][:n_steps]
+            spot_next = self.path_data["S"][1 : n_steps + 1]
         data: dict[str, Any] = {
             "split": [self.split] * n_steps,
             "episode_idx": [self.episode_idx] * n_steps,
             "step_idx": list(range(n_steps)),
-            "time": self.times[:n_steps],
-            "time_next": self.times[1 : n_steps + 1],
-            "spot": self.path_data["S"][:n_steps],
-            "spot_next": self.path_data["S"][1 : n_steps + 1],
+            "time": time,
+            "time_next": time_next,
+            "spot": spot,
+            "spot_next": spot_next,
             "action": self.actions,
             "reward": self.rewards,
             "cost": self.costs,
@@ -88,8 +98,12 @@ class EpisodeResult:
         }
         for extra_key in ("sigma", "variance"):
             if extra_key in self.path_data:
-                data[extra_key] = self.path_data[extra_key][:n_steps]
-                data[f"{extra_key}_next"] = self.path_data[extra_key][1 : n_steps + 1]
+                if n_steps == len(self.times):
+                    data[extra_key] = np.concatenate(([self.path_data[extra_key][0]], self.path_data[extra_key][:-1]))
+                    data[f"{extra_key}_next"] = np.concatenate(([self.path_data[extra_key][0]], self.path_data[extra_key][1:]))
+                else:
+                    data[extra_key] = self.path_data[extra_key][:n_steps]
+                    data[f"{extra_key}_next"] = self.path_data[extra_key][1 : n_steps + 1]
         return pd.DataFrame(data)
 
 
@@ -117,7 +131,12 @@ class HedgingResult:
         rows: list[dict[str, Any]] = []
         for key in selected:
             for ep in self.episodes[cast(SplitType, key)]:
-                total_cost = _nansum(ep.costs)
+                skip_setup = bool(ep.agent_infos) and bool(ep.agent_infos[0].get("is_setup_step", False))
+                start_idx = 1 if skip_setup else 0
+                costs = ep.costs[start_idx:]
+                trade_costs = ep.trade_costs[start_idx:]
+                liquidation_costs = ep.liquidation_costs[start_idx:]
+                total_cost = _nansum(costs)
                 loss_values = (
                     np.asarray([np.nan if x is None else float(x) for x in ep.losses], dtype=float)
                     if ep.losses
@@ -130,10 +149,10 @@ class HedgingResult:
                         "episode_idx": ep.episode_idx,
                         "n_steps": len(ep.actions),
                         "total_cost": total_cost,
-                        "mean_step_cost": _nanmean(ep.costs),
-                        "std_step_cost": _nanstd(ep.costs),
-                        "total_trade_cost": _nansum(ep.trade_costs),
-                        "total_liquidation_cost": _nansum(ep.liquidation_costs),
+                        "mean_step_cost": _nanmean(costs),
+                        "std_step_cost": _nanstd(costs),
+                        "total_trade_cost": _nansum(trade_costs),
+                        "total_liquidation_cost": _nansum(liquidation_costs),
                         "mean_loss": float(finite_losses.mean()) if finite_losses.size > 0 else np.nan,
                     }
                 )

@@ -37,7 +37,7 @@
     {
         "train_episodes": 5000,
         "eval_episodes": 1500,
-        "update_frequency": 1
+        "update_frequency": 5
     },
     "hedging_agent":
     {
@@ -70,7 +70,7 @@
     {
         "maturity": 0.0833333333,
         "rebalancing": 1,
-        "process": "SVJ",
+        "process": "GBM",
         "agent": "DeepDPG",
         "benchmark": "BsDelta",
         "seed": 42,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
-from .hedging_strategy.gym_hedging_env import GymHedgingEnv
+import numpy as np
+from .hedging_strategy.hedging_env import HedgingEnv
 from .hedging_result import HedgingResult, EpisodeResult
 
 logger = logging.getLogger(__name__)
@@ -9,7 +10,7 @@ logger = logging.getLogger(__name__)
 class Orchestrator:
     def __init__(self, config, process_type, agent_type, benchmark_type):
         self.config = config
-        self.env = GymHedgingEnv(config)
+        self.env = HedgingEnv(config)
         self.process = process_type.value(config["simulation"])
         self.agent = agent_type.value(config["hedging_agent"])
         self.benchmark = benchmark_type.value(config)
@@ -39,13 +40,30 @@ class Orchestrator:
         step_count = 0
         for ep in range(self.train_episodes):
             path = self._ep_path(self.training_paths, ep)
-            state, _ = self.env.reset(options={"path_data": path})
-            done = False
+            state = self.env.setup_env(path)
+            H0 = self.agent.act(state, eval_mode=False)
+            self.env.set_initial_hedge(H0)
+            setup_cost = self.config["hedging_env"]["transaction_cost"] * abs(float(path["S"][0]) * float(H0))
             er = EpisodeResult(split="train", episode_idx=ep, times=self.env.times, path_data=path)
+            er.add_step(
+                action=H0,
+                info={
+                    "spot_t": float(path["S"][0]),
+                    "spot_next": float(path["S"][0]),
+                    "hedge": float(H0),
+                    "trade_cost": float(setup_cost),
+                    "liquidation_cost": 0.0,
+                    "reward": 0.0,
+                    "cost": float(setup_cost),
+                },
+                loss=None,
+                agent_info={"is_setup_step": True},
+            )
+            state = np.asarray(self.env._build_state(self.env.i, self.env.h_prev), dtype=np.float32)
+            done = False
             while not done:
                 action = self.agent.act(state, eval_mode=False)
-                ns, reward, terminated, truncated, info = self.env.step(action)
-                done = bool(terminated or truncated)
+                ns, reward, done, info = self.env.step(action)
                 self.agent.store_transition(state, action, reward, ns, done)
                 step_count += 1
                 loss = self.agent.learn() if (step_count % self.update_frequency == 0) else None
@@ -60,13 +78,29 @@ class Orchestrator:
         res = HedgingResult()
         for ep in range(self.eval_episodes):
             path = self._ep_path(self.eval_paths, ep)
-            state, _ = self.env.reset(options={"path_data": path})
-            done = False
+            state = self.env.setup_env(path)
+            H0 = self.agent.act(state, eval_mode=True)
+            self.env.set_initial_hedge(H0)
+            setup_cost = self.config["hedging_env"]["transaction_cost"] * abs(float(path["S"][0]) * float(H0))
             er = EpisodeResult(split="eval_agent", episode_idx=ep, times=self.env.times, path_data=path)
+            er.add_step(
+                action=H0,
+                info={
+                    "spot_t": float(path["S"][0]),
+                    "spot_next": float(path["S"][0]),
+                    "hedge": float(H0),
+                    "trade_cost": float(setup_cost),
+                    "liquidation_cost": 0.0,
+                    "reward": 0.0,
+                    "cost": float(setup_cost),
+                },
+                agent_info={"is_setup_step": True},
+            )
+            state = np.asarray(self.env._build_state(self.env.i, self.env.h_prev), dtype=np.float32)
+            done = False
             while not done:
                 action = self.agent.act(state, eval_mode=True)
-                state, _, terminated, truncated, info = self.env.step(action)
-                done = bool(terminated or truncated)
+                state, _, done, info = self.env.step(action)
                 er.add_step(action=action, info=info)
             res.add_episode(er, type="eval_agent")
         return res
@@ -77,13 +111,29 @@ class Orchestrator:
         res = HedgingResult()
         for ep in range(self.eval_episodes):
             path = self._ep_path(self.eval_paths, ep)
-            state, _ = self.env.reset(options={"path_data": path})
-            done = False
+            state = self.env.setup_env(path)
+            H0 = bench(state)
+            self.env.set_initial_hedge(H0)
+            setup_cost = self.config["hedging_env"]["transaction_cost"] * abs(float(path["S"][0]) * float(H0))
             er = EpisodeResult(split="eval_benchmark", episode_idx=ep, times=self.env.times, path_data=path)
+            er.add_step(
+                action=H0,
+                info={
+                    "spot_t": float(path["S"][0]),
+                    "spot_next": float(path["S"][0]),
+                    "hedge": float(H0),
+                    "trade_cost": float(setup_cost),
+                    "liquidation_cost": 0.0,
+                    "reward": 0.0,
+                    "cost": float(setup_cost),
+                },
+                agent_info={"is_setup_step": True},
+            )
+            state = np.asarray(self.env._build_state(self.env.i, self.env.h_prev), dtype=np.float32)
+            done = False
             while not done:
                 action = bench(state)
-                state, _, terminated, truncated, info = self.env.step(action)
-                done = bool(terminated or truncated)
+                state, _, done, info = self.env.step(action)
                 er.add_step(action=action, info=info)
             res.add_episode(er, type="eval_benchmark")
         return res
