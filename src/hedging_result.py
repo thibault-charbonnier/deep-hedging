@@ -131,11 +131,9 @@ class HedgingResult:
         rows: list[dict[str, Any]] = []
         for key in selected:
             for ep in self.episodes[cast(SplitType, key)]:
-                skip_setup = bool(ep.agent_infos) and bool(ep.agent_infos[0].get("is_setup_step", False))
-                start_idx = 1 if skip_setup else 0
-                costs = ep.costs[start_idx:]
-                trade_costs = ep.trade_costs[start_idx:]
-                liquidation_costs = ep.liquidation_costs[start_idx:]
+                costs = ep.costs
+                trade_costs = ep.trade_costs
+                liquidation_costs = ep.liquidation_costs
                 total_cost = _nansum(costs)
                 loss_values = (
                     np.asarray([np.nan if x is None else float(x) for x in ep.losses], dtype=float)

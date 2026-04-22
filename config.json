@@ -37,7 +37,7 @@
     {
         "train_episodes": 5000,
         "eval_episodes": 1500,
-        "update_frequency": 5
+        "update_frequency": 3
     },
     "hedging_agent":
     {

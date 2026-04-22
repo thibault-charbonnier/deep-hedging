@@ -54,7 +54,7 @@ class Orchestrator:
                     "trade_cost": float(setup_cost),
                     "liquidation_cost": 0.0,
                     "reward": 0.0,
-                    "cost": float(setup_cost),
+                    "cost": 0.0,
                 },
                 loss=None,
                 agent_info={"is_setup_step": True},
@@ -92,7 +92,7 @@ class Orchestrator:
                     "trade_cost": float(setup_cost),
                     "liquidation_cost": 0.0,
                     "reward": 0.0,
-                    "cost": float(setup_cost),
+                    "cost": 0.0,
                 },
                 agent_info={"is_setup_step": True},
             )
@@ -125,7 +125,7 @@ class Orchestrator:
                     "trade_cost": float(setup_cost),
                     "liquidation_cost": 0.0,
                     "reward": 0.0,
-                    "cost": float(setup_cost),
+                    "cost": 0.0,
                 },
                 agent_info={"is_setup_step": True},
             )
