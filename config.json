@@ -49,7 +49,7 @@
         "discount_factor": 1.0,
         "learning_batch_size": 128,
         "replay_capacity": 100000,
-        "min_buffer_size": 128,
+        "min_buffer_size": 1024,
         "target_update_freq": 100,
         "grad_clip": 1.0,
         "grad_clip_q3": 0.5,
@@ -74,7 +74,7 @@
         "agent": "DeepDPG",
         "benchmark": "BsDelta",
         "seed": 42,
-        "save_figures": true,
+        "save_figures": false,
         "enable_cprofile": false,
         "profile_top_n": 60
     }

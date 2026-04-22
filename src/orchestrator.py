@@ -40,11 +40,15 @@ class Orchestrator:
         step_count = 0
         for ep in range(self.train_episodes):
             path = self._ep_path(self.training_paths, ep)
-            state = self.env.setup_env(path)
-            H0 = self.agent.act(state, eval_mode=False)
+            state_init = self.env.setup_env(path)
+            H0 = self.agent.act(state_init, eval_mode=False)
             self.env.set_initial_hedge(H0)
             setup_cost = self.config["hedging_env"]["transaction_cost"] * abs(float(path["S"][0]) * float(H0))
             er = EpisodeResult(split="train", episode_idx=ep, times=self.env.times, path_data=path)
+            state = np.asarray(self.env._build_state(self.env.i, self.env.h_prev), dtype=np.float32)
+            self.agent.store_transition(state_init, H0, -float(setup_cost), state, False)
+            step_count += 1
+            setup_loss = self.agent.learn() if (step_count % self.update_frequency == 0) else None
             er.add_step(
                 action=H0,
                 info={
@@ -56,10 +60,9 @@ class Orchestrator:
                     "reward": 0.0,
                     "cost": 0.0,
                 },
-                loss=None,
+                loss=setup_loss,
                 agent_info={"is_setup_step": True},
             )
-            state = np.asarray(self.env._build_state(self.env.i, self.env.h_prev), dtype=np.float32)
             done = False
             while not done:
                 action = self.agent.act(state, eval_mode=False)
