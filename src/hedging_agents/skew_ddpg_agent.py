@@ -16,7 +16,7 @@ from typing import Any
 import torch
 
 from .ddpg_agent import DeepDPGHedgingAgent
-from ._rl_common import CriticMLP, hard_update, soft_update
+from ._rl_common import CriticMLP, hard_update
 
 logger = logging.getLogger(__name__)
 
@@ -166,10 +166,11 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
             p.requires_grad_(True)
 
         self.learn_steps += 1
-        soft_update(self.actor_target, self.actor, self.tau)
-        soft_update(self.critic_1_target, self.critic_1, self.tau)
-        soft_update(self.critic_2_target, self.critic_2, self.tau)
-        soft_update(self.critic_3_target, self.critic_3, self.tau)
+        if self.learn_steps % self.target_update_frequency == 0:
+            hard_update(self.actor_target, self.actor)
+            hard_update(self.critic_1_target, self.critic_1)
+            hard_update(self.critic_2_target, self.critic_2)
+            hard_update(self.critic_3_target, self.critic_3)
 
         if self.train_mode_enabled:
             self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)

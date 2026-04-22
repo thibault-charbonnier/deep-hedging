@@ -25,7 +25,7 @@ import torch.nn as nn
 from cpprb import PrioritizedReplayBuffer
 
 from .abstract_agent import AbstractHedgingAgent
-from ._rl_common import CriticMLP, MLP, DEVICE, hard_update, soft_update
+from ._rl_common import CriticMLP, MLP, DEVICE, hard_update
 
 
 class _Actor(nn.Module):
@@ -72,10 +72,10 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         self.epsilon_min = float(agent_cfg.get("epsilon_end", 0.05))
         self.epsilon_decay = float(agent_cfg.get("epsilon_decay", 0.9995))
 
-        # Soft target updates (Lillicrap et al. 2016, Section 3).
-        # θ' ← τ·θ + (1-τ)·θ' applied at every learn step.
-        # τ = 0.005 follows TD3 (Fujimoto et al. 2018); Lillicrap used 0.001.
-        self.tau = float(agent_cfg.get("tau", 0.005))
+        # Periodic hard target refresh (Cao et al. 2021, Section 2.5),
+        # matching the separate-target copy schedule popularized in DQN
+        # (Mnih et al. 2015).
+        self.target_update_frequency = int(agent_cfg.get("target_update_frequency", 1000))
 
         # networks
         self.actor = _Actor(self.state_dim, self.hidden_dims, self.action_low, self.action_high).to(self.device)
@@ -259,9 +259,10 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
             p.requires_grad_(True)
 
         self.learn_steps += 1
-        soft_update(self.actor_target, self.actor, self.tau)
-        soft_update(self.critic_1_target, self.critic_1, self.tau)
-        soft_update(self.critic_2_target, self.critic_2, self.tau)
+        if self.learn_steps % self.target_update_frequency == 0:
+            hard_update(self.actor_target, self.actor)
+            hard_update(self.critic_1_target, self.critic_1)
+            hard_update(self.critic_2_target, self.critic_2)
 
         if self.train_mode_enabled:
             self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
