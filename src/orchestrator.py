@@ -47,17 +47,36 @@ class Orchestrator:
         a0 = float(policy_fn(state, 0))
         state_next, raw0 = self.env.apply_action(a0)
         setup_cost = self.kappa * raw0["S_i"] * abs(raw0["H_new"] - raw0["H_prev"])
-        pending_setup_reward = -setup_cost
+        setup_reward = -setup_cost
 
         prev_state = state
         prev_action = a0
         prev_raw = raw0
         state = state_next
 
-        total_reward = 0.0
+        setup_loss = None
+        if learn:
+            self.agent.store_transition(prev_state, prev_action, setup_reward, state, False)
+            self.train_step_count += 1
+            if self.train_step_count % self.update_frequency == 0:
+                setup_loss = self.agent.learn()
+
+        setup_info = {
+            "reward": setup_reward,
+            "cost": setup_cost,
+            "trade_cost": setup_cost,
+            "liquidation_cost": 0.0,
+            "spot_t": raw0["S_i"],
+            "spot_next": raw0["S_i"],
+            "hedge": raw0["H_new"],
+        }
+        record_fn(-1, a0, setup_reward, setup_info, setup_loss)
+
+        total_reward = setup_reward
         for step_idx in range(1, n + 1):
-            is_terminal_action = step_idx == n
-            if is_terminal_action:
+            is_terminal_step = step_idx == n
+            if is_terminal_step:
+                # Contractual close-out: no policy decision at terminal step.
                 ai = 0.0
             else:
                 ai = float(policy_fn(state, step_idx))
@@ -70,20 +89,17 @@ class Orchestrator:
             h_prev = prev_raw["H_new"]
             h_curr = raw_i["H_new"]
 
-            trade_cost_i = self.kappa * s_curr * abs(h_curr - h_prev)
-            reward_i = (v_curr - v_prev) + h_prev * (s_curr - s_prev) - trade_cost_i
-
-            if pending_setup_reward != 0.0:
-                reward_i += pending_setup_reward
-                pending_setup_reward = 0.0
-
             liquidation_cost = 0.0
-            if is_terminal_action:
-                liquidation_cost = self.kappa * s_curr * abs(h_curr)
-                reward_i -= liquidation_cost
+            if is_terminal_step:
+                trade_cost_i = 0.0
+                liquidation_cost = self.kappa * s_curr * abs(h_prev)
+                reward_i = (v_curr - v_prev) + h_prev * (s_curr - s_prev) - liquidation_cost
+            else:
+                trade_cost_i = self.kappa * s_curr * abs(h_curr - h_prev)
+                reward_i = (v_curr - v_prev) + h_prev * (s_curr - s_prev) - trade_cost_i
 
             total_reward += reward_i
-            done = is_terminal_action
+            done = is_terminal_step
             current_loss = None
 
             if learn:
@@ -119,7 +135,10 @@ class Orchestrator:
             er = EpisodeResult(split="train", episode_idx=ep, times=self._episode_times(path), path_data=path)
 
             def record(_step_idx, action, _reward, info, loss):
-                er.add_step(action=action, info=info, loss=loss)
+                if _step_idx == -1:
+                    er.set_setup(action=action, info=info, loss=loss)
+                else:
+                    er.add_step(action=action, info=info, loss=loss)
 
             policy = lambda s, _step_idx: self.agent.act(s, eval_mode=False)
             self._run_episode(path, policy_fn=policy, learn=True, record_fn=record)
@@ -135,7 +154,10 @@ class Orchestrator:
             er = EpisodeResult(split="eval_agent", episode_idx=ep, times=self._episode_times(path), path_data=path)
 
             def record(_step_idx, action, _reward, info, _loss):
-                er.add_step(action=action, info=info)
+                if _step_idx == -1:
+                    er.set_setup(action=action, info=info, loss=None)
+                else:
+                    er.add_step(action=action, info=info)
 
             policy = lambda s, _step_idx: self.agent.act(s, eval_mode=True)
             self._run_episode(path, policy_fn=policy, learn=False, record_fn=record)
@@ -159,7 +181,10 @@ class Orchestrator:
             bench_call_arity = len(inspect.signature(bench.__call__).parameters)
 
             def record(_step_idx, action, _reward, info, _loss):
-                er.add_step(action=action, info=info)
+                if _step_idx == -1:
+                    er.set_setup(action=action, info=info, loss=None)
+                else:
+                    er.add_step(action=action, info=info)
 
             def policy(s, step_idx):
                 if bench_call_arity >= 2:
