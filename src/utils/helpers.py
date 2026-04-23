@@ -14,17 +14,20 @@ except Exception:  # pragma: no cover - torch may be unavailable in some environ
 
 
 def json_to_dict(json_file: str) -> dict:
+    """Load a JSON file into a Python dict."""
     with open(json_file, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 
 def ensure_dir(path: str | Path) -> Path:
+    """Create the directory at ``path`` (with parents) and return it as a ``Path``."""
     out = Path(path)
     out.mkdir(parents=True, exist_ok=True)
     return out
 
 
 def dump_json(path: str | Path, payload: dict) -> None:
+    """Write ``payload`` to ``path`` as pretty-printed JSON (creates parent dirs)."""
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("w", encoding="utf-8") as f:
@@ -32,6 +35,7 @@ def dump_json(path: str | Path, payload: dict) -> None:
 
 
 def append_csv_row(path: str | Path, row: dict) -> None:
+    """Append ``row`` to the CSV at ``path``, aligning columns with the existing header if any."""
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     row_df = pd.DataFrame([row])
@@ -46,6 +50,7 @@ def append_csv_row(path: str | Path, row: dict) -> None:
 
 
 def build_run_id(tag: str = "main") -> str:
+    """Build a filesystem-safe run id of the form ``<timestamp>_<tag>_<uuid6>``."""
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     short = uuid4().hex[:6]
     safe_tag = "".join(c if c.isalnum() or c in "-_" else "_" for c in tag)
@@ -53,6 +58,7 @@ def build_run_id(tag: str = "main") -> str:
 
 
 def set_global_seed(seed: int, deterministic_torch: bool = True) -> None:
+    """Seed Python's ``random``, NumPy and (if available) PyTorch for reproducible runs."""
     random.seed(seed)
     np.random.seed(seed)
 

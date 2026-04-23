@@ -20,7 +20,16 @@ from ..valuation.bs_valuation import BSValuation
 
 
 class HedgingEnv:
+    """Accounting-P&L hedging environment used for training and evaluation.
+
+    Holds a single path at a time and exposes a ``gym``-style ``step``
+    that returns the per-step reward, cost and next state. Forces
+    liquidation at the terminal step so the final transaction cost is
+    exactly ``kappa * S_n * |H_{n-1}|``.
+    """
+
     def __init__(self, config: dict[str, Any]) -> None:
+        """Initialise pricing engine and per-run constants (kappa, sigma, maturity, strike)."""
         self.transac_cost = float(config["hedging_env"]["transaction_cost"])
         self.position_sign = float(config["hedging_env"]["position_sign"])
         self.valuation_sigma = float(config["simulation"]["gbm"]["sigma"])
@@ -32,6 +41,12 @@ class HedgingEnv:
             option_type=config.get("derivative", {}).get("option_type", "call"))
 
     def setup_env(self, path_data):
+        """Prepare the env for a new path and return the initial state.
+
+        Accepts either a raw spot array or a ``{"S": ..., "sigma"/"variance": ...}``
+        dict. Pre-computes the option value along the path and resets
+        the time index and previous hedge.
+        """
         if isinstance(path_data, dict):
             self.path_dict = {k: np.asarray(v, dtype=float) for k, v in path_data.items()}
             self.path_data = self.path_dict["S"]
@@ -110,6 +125,7 @@ class HedgingEnv:
         return next_state, reward, done, info
 
     def _build_state(self, step, hedge_pos):
+        """Return the 4-dim state ``[holding, log(S/K), TTM/T, sigma/sigma_ref]`` at ``step``."""
         idx = step
         t = self.times[step]
         spot, vol = self.path_data[idx], self._vol_path[idx]

@@ -3,6 +3,8 @@ from scipy.stats import norm
 
 
 class BSValuation:
+    """Closed-form Black-Scholes pricer/delta for a European call or put."""
+
     def __init__(self, strike, maturity, rate=0.0, dividend=0.0, option_type="call"):
         self.K = float(strike)
         self.T = float(maturity)
@@ -11,6 +13,12 @@ class BSValuation:
         self.option_type = option_type.lower()
 
     def price_and_delta(self, spot, t, sigma):
+        """Return ``(price, delta)`` at ``(spot, t, sigma)``.
+
+        Fully vectorised (inputs can be scalars or ndarrays of matching
+        shape). At maturity (``t >= T``) the payoff and payoff delta are
+        returned directly instead of the BS formula.
+        """
         # Vectorized implementation (works for scalars and arrays).
         S = np.asarray(spot, dtype=float)
         tau_raw = np.maximum(self.T - np.asarray(t, dtype=float), 0.0)

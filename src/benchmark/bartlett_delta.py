@@ -13,6 +13,13 @@ from ..valuation.sabr_valuation import bartlett_delta as _bartlett_delta
 
 
 class BartlettDeltaBenchmark:
+    """Bartlett delta benchmark under SABR (beta=1).
+
+    Combines the BS delta at the current implied vol with a vega-based
+    adjustment that accounts for the expected covariation of spot and
+    volatility (``rho * nu / S``).
+    """
+
     def __init__(self, config: dict) -> None:
         self.position_sign = float(config["hedging_env"]["position_sign"])
         self.option_type = config.get("derivative", {}).get("option_type", "call")
@@ -27,6 +34,7 @@ class BartlettDeltaBenchmark:
         self.rho = float(config["simulation"]["sabr"]["rho"])
 
     def __call__(self, state: np.ndarray) -> float:
+        """Return the Bartlett-hedged position from the state, handling the T=0 payoff limit."""
         _, log_m, norm_ttm, norm_vol = state
         spot = self.K * float(np.exp(log_m))
         ttm = self.maturity * float(norm_ttm)

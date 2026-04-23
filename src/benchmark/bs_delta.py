@@ -5,6 +5,12 @@ from ..valuation.bs_valuation import BSValuation
 
 
 class BSDeltaBenchmark:
+    """Black-Scholes delta-hedging benchmark with a constant volatility.
+
+    Callable on the HedgingEnv state: returns the hedge position that
+    offsets the BS delta of the option, scaled by the position sign.
+    """
+
     def __init__(self, config: dict) -> None:
         self.position_sign = float(config["hedging_env"]["position_sign"])
         self.option_type = config.get("derivative", {}).get("option_type", "call")
@@ -18,6 +24,7 @@ class BSDeltaBenchmark:
         self.maturity = float(config["simulation"]["maturity"])
 
     def __call__(self, state: np.ndarray) -> float:
+        """Return the hedge position from the current state (log-moneyness, normalized TTM)."""
         _, log_m, norm_ttm, _ = state
         spot = self.bs.K * float(np.exp(log_m))
         t = self.maturity * (1.0 - float(norm_ttm))

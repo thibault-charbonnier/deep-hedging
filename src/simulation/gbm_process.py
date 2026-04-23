@@ -4,6 +4,8 @@ import numpy as np
 
 
 class GBMProcess:
+    """Geometric Brownian Motion spot process: ``dS = mu S dt + sigma S dW``."""
+
     def __init__(self, simulation_cfg: dict) -> None:
         self.n_steps = int(simulation_cfg["n_steps"])
         self.maturity = float(simulation_cfg["maturity"])
@@ -14,6 +16,10 @@ class GBMProcess:
         self.sqrt_dt = np.sqrt(self.dt)
 
     def simulate_paths(self, n_paths: int) -> dict[str, np.ndarray]:
+        """Simulate ``n_paths`` GBM trajectories, each of length ``n_steps + 1``.
+
+        Returns ``{"S": array}`` of shape ``(n_paths, n_steps + 1)``.
+        """
         n_paths = int(n_paths)
         z = np.random.normal(size=(n_paths, self.n_steps))
         log_returns = (self.mu - 0.5 * self.sigma ** 2) * self.dt + self.sigma * self.sqrt_dt * z

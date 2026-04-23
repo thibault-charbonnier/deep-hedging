@@ -15,6 +15,13 @@ from ..valuation.sabr_valuation import sabr_implied_vol, bs_delta_from_vol
 
 
 class SABRPractitionerDeltaBenchmark:
+    """Practitioner delta benchmark under SABR (beta=1).
+
+    At each step computes the SABR implied vol from the current local
+    sigma and returns the BS delta evaluated at that implied vol (no
+    vega-rho adjustment, unlike Bartlett).
+    """
+
     def __init__(self, config: dict) -> None:
         self.position_sign = float(config["hedging_env"]["position_sign"])
         self.option_type = config.get("derivative", {}).get("option_type", "call")
@@ -29,6 +36,7 @@ class SABRPractitionerDeltaBenchmark:
         self.rho = float(config["simulation"]["sabr"]["rho"])
 
     def __call__(self, state: np.ndarray) -> float:
+        """Return the practitioner-delta position from the state, handling the T=0 payoff limit."""
         _, log_m, norm_ttm, norm_vol = state
         spot = self.K * float(np.exp(log_m))
         ttm = self.maturity * float(norm_ttm)

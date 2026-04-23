@@ -15,6 +15,11 @@ import torch.nn as nn
 
 
 def get_device() -> torch.device:
+    """Return the torch device used by every network in the project.
+
+    For this workload (small step-wise tensors), CPU is faster than the
+    MPS transfer overhead.
+    """
     # For this project workload (small step-wise tensors), CPU is faster than MPS transfer overhead.
     return torch.device("cpu")
 
@@ -22,6 +27,8 @@ def get_device() -> torch.device:
 # ── Networks ─────────────────────────────────────────────────────────
 
 class MLP(nn.Module):
+    """Standard fully-connected ReLU MLP with an optional output activation."""
+
     def __init__(self, input_dim: int, output_dim: int,
                  hidden_dims: Iterable[int] = (128, 128),
                  output_activation: nn.Module | None = None) -> None:
@@ -36,16 +43,20 @@ class MLP(nn.Module):
         self.net = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Run the stacked Linear/ReLU layers on ``x``."""
         return self.net(x)
 
 
 class CriticMLP(nn.Module):
+    """Scalar critic ``Q(s, a)`` implemented as an MLP on the concatenated (s, a) vector."""
+
     def __init__(self, state_dim: int, action_dim: int,
                  hidden_dims: Iterable[int] = (128, 128)) -> None:
         super().__init__()
         self.net = MLP(state_dim + action_dim, 1, hidden_dims)
 
     def forward(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+        """Return ``Q(s, a)``; ``action`` is auto-reshaped to 2D if needed."""
         if action.ndim == 1:
             action = action.unsqueeze(-1)
         return self.net(torch.cat([state, action], dim=-1))
@@ -61,6 +72,7 @@ class QuantileCriticMLP(nn.Module):
         self.net = MLP(state_dim + action_dim, self.n_quantiles, hidden_dims)
 
     def forward(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+        """Return ``[B, N]`` tensor of predicted quantile values for each input pair."""
         if action.ndim == 1:
             action = action.unsqueeze(-1)
         return self.net(torch.cat([state, action], dim=-1))  # [B, N]
@@ -71,4 +83,5 @@ class QuantileCriticMLP(nn.Module):
 
 
 def hard_update(target: nn.Module, source: nn.Module) -> None:
+    """Copy every parameter from ``source`` into ``target`` (periodic hard target update)."""
     target.load_state_dict(source.state_dict())

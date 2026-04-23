@@ -13,6 +13,8 @@ from ..utils.helpers import append_csv_row, build_run_id, dump_json, ensure_dir
 
 @dataclass
 class RunContext:
+    """Paths and identifiers for a single run's output directory."""
+
     run_id: str
     script: str
     root_dir: Path
@@ -21,6 +23,8 @@ class RunContext:
 
 
 class RunStore:
+    """Persist run artifacts (config, meta, data, tables) under a common base directory."""
+
     def __init__(self, base_dir: str | Path = "outputs") -> None:
         self.base_dir = ensure_dir(base_dir)
         self.index_path = self.base_dir / "runs_index.csv"
@@ -32,6 +36,7 @@ class RunStore:
         config: dict[str, Any] | None = None,
         extra_meta: dict[str, Any] | None = None,
     ) -> RunContext:
+        """Create a fresh run directory, dump config/meta, and return the run context."""
         run_id = build_run_id(script)
         root = ensure_dir(self.base_dir / run_id)
         ctx = RunContext(
@@ -64,6 +69,12 @@ class RunStore:
         risk_lambda: float = 1.5,
         option_price_t0: float | None = None,
     ) -> None:
+        """Persist step/episode/summary frames of ``result`` under ``label``.
+
+        When ``option_price_t0`` is provided and positive, cost columns
+        are rescaled to units of ``100 / option_price_t0`` so metrics
+        are comparable across strikes and maturities.
+        """
         step_df = result.step_frame()
         episode_df = result.episode_table()
         summary_df = result.split_summary(risk_lambda=risk_lambda)
@@ -94,6 +105,7 @@ class RunStore:
             summary_df.to_csv(ctx.tables_dir / f"{label}_summary.csv", index=False)
 
     def finalize(self, *, ctx: RunContext, ok: bool, note: str = "") -> None:
+        """Append a line to ``runs_index.csv`` recording the final status of the run."""
         append_csv_row(
             self.index_path,
             {

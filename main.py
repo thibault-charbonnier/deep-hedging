@@ -29,6 +29,11 @@ def _calculate_n_steps(maturity: float, rebalancing: int) -> int:
 
 
 def _option_price_t0(config: dict) -> float:
+    """Return the absolute Black-Scholes price of the option at t=0.
+
+    Uses the GBM sigma from the config as the pricing volatility. The
+    returned value is used as a normalisation scale for reported costs.
+    """
     maturity = float(config["simulation"]["maturity"])
     spot = float(config["simulation"]["S0"])
     sigma = float(config["simulation"]["gbm"]["sigma"])
@@ -96,6 +101,7 @@ def _run_pipeline(config: dict) -> tuple[RunStore, RunContext]:
 
 
 def main() -> None:
+    """Entry point: parse CLI args, load config, seed, and run the pipeline."""
     parser = argparse.ArgumentParser(description="Deep-hedging runner - configure everything in config.json")
     parser.add_argument("--config", default="config.json", help="Path to config file (default: config.json)")
     args = parser.parse_args()

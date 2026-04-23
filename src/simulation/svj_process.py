@@ -29,6 +29,12 @@ class SVJProcess:
         self.sqrt_dt = np.sqrt(self.dt)
 
     def simulate_paths(self, n_paths: int) -> dict[str, np.ndarray]:
+        """Simulate ``n_paths`` (S, variance) trajectories under Heston + jumps.
+
+        Variance uses a full-truncation Euler scheme. Jumps in log-return
+        are a compound Poisson process with Gaussian jump sizes. Returns
+        ``{"S": array, "variance": array}`` of shape ``(n_paths, n_steps + 1)``.
+        """
         n_paths = int(n_paths)
         z1 = np.random.normal(size=(n_paths, self.n_steps))
         z2_indep = np.random.normal(size=(n_paths, self.n_steps))

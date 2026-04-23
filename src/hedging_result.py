@@ -11,14 +11,17 @@ ALL_SPLITS: tuple[SplitType, SplitType, SplitType] = ("train", "eval_agent", "ev
 
 
 def _nanmean(values: list[float]) -> float:
+    """Mean of a list ignoring NaNs; returns NaN if the list is empty."""
     return float(np.nanmean(values)) if values else np.nan
 
 
 def _nanstd(values: list[float]) -> float:
+    """Population std (ddof=0) of a list ignoring NaNs; NaN if empty."""
     return float(np.nanstd(values)) if values else np.nan
 
 
 def _nansum(values: list[float]) -> float:
+    """Sum of a list ignoring NaNs; returns NaN if the list is empty."""
     return float(np.nansum(values)) if values else np.nan
 
 
@@ -40,6 +43,8 @@ def _nanskewness(values: list[float]) -> float:
 
 @dataclass
 class EpisodeResult:
+    """Per-step log for a single episode (one simulated path)."""
+
     split: SplitType
     episode_idx: int
     path_data: dict[str, np.ndarray]
@@ -60,6 +65,7 @@ class EpisodeResult:
         loss: float | None = None,
         agent_info: dict[str, Any] | None = None,
     ) -> None:
+        """Append one step: action, env info (reward/cost/trade/liq), optional loss and agent info."""
         self.actions.append(float(action))
         self.rewards.append(float(info.get("reward", np.nan)))
         self.costs.append(float(info.get("cost", np.nan)))
@@ -69,6 +75,12 @@ class EpisodeResult:
         self.agent_infos.append({} if agent_info is None else agent_info)
 
     def step_frame(self) -> pd.DataFrame:
+        """Return a long-format DataFrame with one row per step.
+
+        Columns include split/episode identifiers, current and next
+        values of time/spot/sigma/variance (when available), action,
+        reward, costs (total/trade/liquidation), and loss.
+        """
         n_steps = len(self.actions)
         if n_steps == len(self.times):
             time = np.concatenate(([self.times[0]], self.times[:-1]))
@@ -107,6 +119,8 @@ class EpisodeResult:
 
 
 class HedgingResult:
+    """Container holding all ``EpisodeResult`` instances across train/eval splits."""
+
     def __init__(self) -> None:
         self.episodes: dict[SplitType, list[EpisodeResult]] = {
             "train": [],
@@ -115,9 +129,11 @@ class HedgingResult:
         }
 
     def add_episode(self, episode_result: EpisodeResult, type: SplitType) -> None:
+        """Register ``episode_result`` under the given split."""
         self.episodes[type].append(episode_result)
 
     def step_frame(self, split: SplitType | None = None) -> pd.DataFrame:
+        """Concatenate per-step frames over the selected split(s). All splits if None."""
         selected: list[SplitType] = [split] if split else list(ALL_SPLITS)
         frames: list[pd.DataFrame] = []
         for key in selected:
@@ -126,6 +142,7 @@ class HedgingResult:
         return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
     def episode_table(self, split: SplitType | None = None) -> pd.DataFrame:
+        """Return one row per episode with aggregate cost/loss statistics."""
         selected: list[SplitType] = [split] if split else list(ALL_SPLITS)
         rows: list[dict[str, Any]] = []
         for key in selected:
@@ -156,6 +173,12 @@ class HedgingResult:
         return pd.DataFrame(rows)
 
     def split_summary(self, split: SplitType | None = None, risk_lambda: float = 1.5) -> pd.DataFrame:
+        """Aggregate per-split stats of ``total_cost`` across episodes.
+
+        For each split: episode count, mean, std (ddof=0), skew, and the
+        mean-variance objective ``Y = mean + risk_lambda * std`` used as
+        the main comparison metric.
+        """
         ep = self.episode_table(split=split)
         if ep.empty:
             return pd.DataFrame()

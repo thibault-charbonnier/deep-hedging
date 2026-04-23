@@ -27,6 +27,8 @@ from ._rl_common import CriticMLP, MLP, get_device, hard_update
 
 
 class _Actor(nn.Module):
+    """Deterministic policy network: tanh output rescaled to ``[action_low, action_high]``."""
+
     def __init__(self, state_dim, hidden_dims, action_low, action_high):
         super().__init__()
         self.backbone = MLP(state_dim, 1, hidden_dims, output_activation=nn.Tanh())
@@ -34,14 +36,17 @@ class _Actor(nn.Module):
         self.register_buffer("a_hi", torch.tensor([action_high], dtype=torch.float32))
 
     def forward(self, s):
+        """Return the deterministic action in ``[a_lo, a_hi]`` for state ``s``."""
         mid = 0.5 * (self.a_hi + self.a_lo)
         half = 0.5 * (self.a_hi - self.a_lo)
         return mid + half * self.backbone(s)
 
 
 class DeepDPGHedgingAgent(AbstractHedgingAgent):
+    """Deep DPG hedging agent with mean/variance dual critics and PER (Cao et al. 2021)."""
 
     def __init__(self, agent_cfg: dict[str, Any]) -> None:
+        """Build networks, optimisers and the prioritized replay buffer from ``agent_cfg``."""
         super().__init__(agent_cfg)
         self.device = get_device()
         self.state_dim = int(agent_cfg.get("state_dim", 4))
@@ -104,15 +109,19 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         self.learn_steps = 0
 
     def _st(self, state):
+        """Convert a numpy state to a ``[1, state_dim]`` tensor on the agent device."""
         return torch.as_tensor(np.asarray(state, dtype=np.float32), device=self.device).unsqueeze(0)
 
     def _replay_size(self) -> int:
+        """Return the current number of transitions stored in the replay buffer."""
         return int(self.replay_buffer.get_stored_size())
 
     def _update_priorities(self, indices: np.ndarray, priorities: np.ndarray) -> None:
+        """Update the PER priorities for the given sample indices."""
         self.replay_buffer.update_priorities(indices, priorities)
 
     def _sample_batch_tensors(self) -> dict[str, Any]:
+        """Sample a PER batch, advance the IS-beta schedule, and return tensors on the device."""
         self.per_frame += 1
         beta = min(
             1.0,
@@ -134,6 +143,7 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         }
 
     def act(self, state, eval_mode=False):
+        """Return the hedge action for ``state`` (epsilon-greedy during training)."""
         # ── ε-greedy (Paper Section 2.6) ─────────────────────────────
         # "With probability ε, a random action is taken, and with
         #  probability 1−ε the policy function is followed."
@@ -146,6 +156,7 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         return float(np.clip(a, self.action_low, self.action_high))
 
     def store_transition(self, state, action, reward, next_state, done):
+        """Push the transition into the prioritized replay buffer."""
         self.replay_buffer.add(
             obs=np.asarray(state, dtype=np.float32),
             act=np.asarray([float(action)], dtype=np.float32),
@@ -155,6 +166,15 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         )
 
     def learn(self):
+        """Run one gradient update on critics and actor.
+
+        Critics fit ``E[C]`` and ``E[C^2]`` via IS-weighted MSE; the actor
+        minimises ``Q1 + risk_lambda * sqrt(Q2 - Q1^2)``. Target networks
+        are copied hard every ``target_update_freq`` updates, PER
+        priorities are refreshed from the TD errors, and epsilon is
+        decayed. Returns a scalar loss or ``None`` if the buffer is too
+        small.
+        """
         if self._replay_size() < self.min_buffer:
             return None
 
@@ -231,12 +251,14 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
 
 
     def set_eval_mode(self):
+        """Disable exploration and switch every network to ``eval()`` mode."""
         self.train_mode_enabled = False
         for m in [self.actor, self.actor_target, self.critic_1,
                   self.critic_1_target, self.critic_2, self.critic_2_target]:
             m.eval()
 
     def set_train_mode(self):
+        """Enable exploration and switch every network to ``train()`` mode."""
         self.train_mode_enabled = True
         for m in [self.actor, self.actor_target, self.critic_1,
                   self.critic_1_target, self.critic_2, self.critic_2_target]:

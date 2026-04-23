@@ -18,6 +18,7 @@ def _paths_cache_key(process_name: str, sim_cfg: dict, n_paths: int, seed) -> st
 
 
 def _load_paths_npz(path: Path) -> dict[str, np.ndarray] | None:
+    """Load a ``{name: array}`` dict from an ``.npz`` file, or None if missing."""
     if not path.exists():
         return None
     with np.load(path) as data:
@@ -25,11 +26,20 @@ def _load_paths_npz(path: Path) -> dict[str, np.ndarray] | None:
 
 
 def _save_paths_npz(path: Path, paths: dict[str, np.ndarray]) -> None:
+    """Save a ``{name: array}`` dict to ``path`` as an ``.npz`` archive."""
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(path, **paths)
 
 
 class Orchestrator:
+    """Coordinate path simulation, agent training/evaluation, and benchmark evaluation.
+
+    Responsibilities:
+    - Simulate (and optionally cache) training and evaluation paths.
+    - Run the episode loops for training, agent eval, and benchmark eval.
+    - Hand each step to the HedgingEnv and feed transitions to the agent.
+    """
+
     def __init__(self, config, process_type, agent_type, benchmark_type):
         self.config = config
         self.process_name = process_type.name
@@ -52,15 +62,18 @@ class Orchestrator:
         self._seed = config.get("run", {}).get("seed")
 
     def _ep_path(self, paths, ep):
+        """Slice the ``{name: array}`` batch into a single-episode ``{name: row}`` dict."""
         return {k: v[ep] for k, v in paths.items()}
 
     def _cache_path(self, kind: str, n_paths: int) -> Path | None:
+        """Return the cache file path for ``kind`` in {'train','eval'} or None if caching is disabled."""
         if self._cache_dir is None:
             return None
         key = _paths_cache_key(self.process_name, self.config["simulation"], n_paths, self._seed)
         return self._cache_dir / f"{key}_{kind}.npz"
 
     def _ensure_training_paths(self):
+        """Load training paths from cache if available, otherwise simulate and cache them."""
         if self.training_paths is not None:
             return
         cache_path = self._cache_path("train", self.train_episodes)
@@ -77,6 +90,7 @@ class Orchestrator:
             logger.info("Cached training paths to %s", cache_path)
 
     def _ensure_eval_paths(self):
+        """Load evaluation paths from cache if available, otherwise simulate and cache them."""
         if self.eval_paths is not None:
             return
         cache_path = self._cache_path("eval", self.eval_episodes)
@@ -93,6 +107,15 @@ class Orchestrator:
             logger.info("Cached evaluation paths to %s", cache_path)
 
     def train(self):
+        """Train the agent over ``train_episodes`` simulated paths.
+
+        For each episode: pick an initial hedge H0, step through the path
+        while collecting (s, a, r, s', done) transitions into the agent's
+        replay buffer, periodically calling ``agent.learn()``. Uses a
+        buffered commit so the terminal liquidation reward is folded into
+        the second-to-last transition (avoids bootstrapping through a
+        dummy terminal step).
+        """
         self._ensure_training_paths()
         self.agent.set_train_mode()
         res = HedgingResult()
@@ -156,6 +179,7 @@ class Orchestrator:
         return res
 
     def test(self):
+        """Evaluate the trained agent over ``eval_episodes`` paths (no learning, no exploration)."""
         self._ensure_eval_paths()
         self.agent.set_eval_mode()
         res = HedgingResult()
@@ -191,6 +215,7 @@ class Orchestrator:
         return res
 
     def test_benchmark(self, benchmark_override=None):
+        """Evaluate the analytical benchmark (BS / Bartlett / SABR practitioner) on the eval paths."""
         self._ensure_eval_paths()
         bench = benchmark_override or self.benchmark
         res = HedgingResult()

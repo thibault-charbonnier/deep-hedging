@@ -23,6 +23,12 @@ class SABRProcess:
         self.sqrt_dt = np.sqrt(self.dt)
 
     def simulate_paths(self, n_paths: int) -> dict[str, np.ndarray]:
+        """Simulate ``n_paths`` correlated (S, sigma) trajectories under SABR (beta=1).
+
+        Returns ``{"S": array, "sigma": array}``, both of shape
+        ``(n_paths, n_steps + 1)``. Sigma follows a log-normal SDE so it
+        stays strictly positive.
+        """
         n_paths = int(n_paths)
         z1 = np.random.normal(size=(n_paths, self.n_steps))
         z2_indep = np.random.normal(size=(n_paths, self.n_steps))

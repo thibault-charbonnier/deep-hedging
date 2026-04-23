@@ -77,10 +77,12 @@ COLOR_NEGATIVE = "#C1121F"
 
 
 def _load_csv_optional(path: Path) -> pd.DataFrame | None:
+    """Return ``pd.read_csv(path)`` or ``None`` if the file is missing."""
     return pd.read_csv(path) if path.exists() else None
 
 
 def _load_run_artifacts(run_id: str, outputs_dir: str | Path | None) -> dict[str, object]:
+    """Load config + step/episode/summary tables for a run id into a dict of DataFrames."""
     run_dir = (Path(outputs_dir) if outputs_dir is not None else Path(__file__).resolve().parents[2] / "outputs") / run_id
     cfg = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
 
@@ -99,6 +101,7 @@ def _load_run_artifacts(run_id: str, outputs_dir: str | Path | None) -> dict[str
 
 
 def _get_scalar(df: pd.DataFrame | None, column: str) -> float:
+    """Return ``df.iloc[0][column]`` as a float, or NaN if the column is absent or df is empty."""
     if df is None or df.empty or column not in df.columns:
         return float("nan")
     return float(df.iloc[0][column])
@@ -111,6 +114,7 @@ def _bar_with_labels(
     ylabel: str,
     usd_scale: float | None = None,
 ) -> None:
+    """Draw a 2-bar RL-vs-Benchmark plot with numeric labels (optionally converted to USD)."""
     bars = ax.bar([0, 1], values, width=0.5, color=[COLOR_RL, COLOR_BM], edgecolor="white")
     if usd_scale is not None and np.isfinite(usd_scale):
         labels = [f"{v:.2f}%\n(${v * usd_scale:.3f})" for v in values]
@@ -160,6 +164,7 @@ def _stacked_y_bar(
 
 
 def _plot_training_loss(ax: plt.Axes, train_steps: pd.DataFrame | None) -> None:
+    """Plot raw and 200-step-smoothed training loss on ``ax`` (log y), or a placeholder if no data."""
     ax.set_title("Training Loss")
     ax.set_xlabel("Update step")
     ax.set_ylabel("Loss")
@@ -181,6 +186,7 @@ def _plot_training_loss(ax: plt.Axes, train_steps: pd.DataFrame | None) -> None:
 
 
 def _plot_training_episode_cost(ax: plt.Axes, train_episodes: pd.DataFrame | None) -> None:
+    """Plot raw and 100-episode-smoothed total cost (mean +/- 1 std) during training on ``ax``."""
     ax.set_title("Training Episode Cost")
     ax.set_xlabel("Episode")
     ax.set_ylabel("Total cost")
