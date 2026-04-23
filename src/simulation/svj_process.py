@@ -1,102 +1,63 @@
+from __future__ import annotations
+
 import numpy as np
-from typing import Any
-from .base_process import BaseProcess
 
 
-class SVJProcess(BaseProcess):
+class SVJProcess:
     """
-    Implementation of the BaseProcess abstract class for a Stochastic Volatility with Jumps (SVJ) process.
+    Stochastic volatility with jumps.
 
-    We simulate the discretized version of this SDE:
-        dS_t / S_t = (mu - lambda * kJ) dt + sqrt(v_t) dW1_t + dJ_t
-        dv_t = kappa * (theta - v_t) dt + xi * sqrt(v_t) dW2_t
-        corr(dW1_t, dW2_t) = rho
-    Where Jumps are modeled as a compound Poisson process:
-        N_t ~ Poisson(lambda * dt)
-        log-jump sizes ~ Normal(jump_mean, jump_std)
-
-    Model-specific parameters:
-        - mu : drift of the process
-        - v0 : initial variance
-        - kappa : mean reversion speed of the variance
-        - theta : long-term mean of the variance
-        - xi : volatility of volatility
-        - rho : correlation between the Brownian motions
-        - jump_intensity : intensity (lambda) of the Poisson jump process
-        - jump_mean : mean of the normal distribution for log-jump sizes
-        - jump_std : standard deviation of the normal distribution for log-jump sizes
+    Variance follows a full-truncation Heston-like Euler scheme.
+    Jumps act on log-returns with Poisson arrivals and Gaussian jump sizes.
     """
 
-    def __init__(self, simulation_cfg: dict[str, Any]) -> None:
+    def __init__(self, simulation_cfg: dict) -> None:
+        self.n_steps = int(simulation_cfg["n_steps"])
+        self.maturity = float(simulation_cfg["maturity"])
+        self.S0 = float(simulation_cfg["S0"])
+        params = simulation_cfg["svj"]
+        self.mu = float(params.get("mu", 0.0))
+        self.v0 = float(params.get("v0", 0.04))
+        self.kappa = float(params.get("kappa", 1.0))
+        self.theta = float(params.get("theta", 0.04))
+        self.xi = float(params.get("xi", 0.5))
+        self.rho = float(params.get("rho", -0.5))
+        self.jump_intensity = float(params.get("jump_intensity", 1.0))
+        self.jump_mean = float(params.get("jump_mean", -0.02))
+        self.jump_std = float(params.get("jump_std", 0.05))
+        self.dt = self.maturity / self.n_steps
+        self.sqrt_dt = np.sqrt(self.dt)
+
+    def simulate_paths(self, n_paths: int) -> dict[str, np.ndarray]:
+        """Simulate ``n_paths`` (S, variance) trajectories under Heston + jumps.
+
+        Variance uses a full-truncation Euler scheme. Jumps in log-return
+        are a compound Poisson process with Gaussian jump sizes. Returns
+        ``{"S": array, "variance": array}`` of shape ``(n_paths, n_steps + 1)``.
         """
-        Parameters
-        ----------
-        simulation_cfg : dict
-            Configuration dictionary containing the base information for the simulation and model-specific parameters.
-        """
-        super().__init__(simulation_cfg)
+        n_paths = int(n_paths)
+        z1 = np.random.normal(size=(n_paths, self.n_steps))
+        z2_indep = np.random.normal(size=(n_paths, self.n_steps))
+        z2 = self.rho * z1 + np.sqrt(max(1.0 - self.rho ** 2, 0.0)) * z2_indep
 
-        self.mu = float(simulation_cfg["mu"])
-        self.v0 = float(simulation_cfg["v0"])
-        self.kappa = float(simulation_cfg["kappa"])
-        self.theta = float(simulation_cfg["theta"])
-        self.xi = float(simulation_cfg["xi"])
-        self.rho = float(simulation_cfg["rho"])
+        N = np.random.poisson(self.jump_intensity * self.dt, size=(n_paths, self.n_steps))
+        J = np.random.normal(self.jump_mean, self.jump_std, size=(n_paths, self.n_steps))
+        jump_term = N * J
 
-        self.jump_intensity = float(simulation_cfg["jump_intensity"])
-        self.jump_mean = float(simulation_cfg["jump_mean"])
-        self.jump_std = float(simulation_cfg["jump_std"])
+        S = np.empty((n_paths, self.n_steps + 1), dtype=float)
+        variance = np.empty((n_paths, self.n_steps + 1), dtype=float)
+        S[:, 0] = self.S0
+        variance[:, 0] = self.v0
 
-        self.kJ = np.exp(self.jump_mean + 0.5 * self.jump_std**2) - 1.0
-
-    def simulate_one_path(self) -> dict[str, np.ndarray]:
-        """
-        Simulate one path of the SVJ process.
-
-        Returns
-        -------
-        dict[str, np.ndarray]
-            A dictionary containing:
-            - "S": the simulated price path of the SVJ process
-            - "variance": the simulated variance path of the SVJ process
-            - "jump_count": the simulated jump count path of the SVJ process
-        """
-        z1, z2 = self._correlated_normals(self.rho)
-
-        S = self._init_1d_path(self.S0)
-        variance = self._init_1d_path(self.v0)
-        jump_count = self._init_1d_path(0.0)
-
-        for i in range(self.n_steps):
-            v_i = max(variance[i], 0.0)
-
-            variance[i + 1] = max(
-                variance[i]
-                + self.kappa * (self.theta - v_i) * self.dt
-                + self.xi * np.sqrt(v_i) * self.sqrt_dt * z2[i],
-                1e-12,
+        for t in range(self.n_steps):
+            v_t = np.maximum(variance[:, t], 0.0)
+            sqrt_v_t = np.sqrt(np.maximum(v_t, 1e-10))
+            variance[:, t + 1] = np.maximum(
+                variance[:, t] + self.kappa * (self.theta - v_t) * self.dt + self.xi * sqrt_v_t * self.sqrt_dt * z2[:, t],
+                1e-10,
+            )
+            S[:, t + 1] = S[:, t] * np.exp(
+                (self.mu - 0.5 * v_t) * self.dt + sqrt_v_t * self.sqrt_dt * z1[:, t] + jump_term[:, t]
             )
 
-            n_jumps = self.rng.poisson(self.jump_intensity * self.dt)
-            jump_count[i + 1] = n_jumps
-
-            if n_jumps > 0:
-                jump_sum = self.rng.normal(
-                    loc=self.jump_mean,
-                    scale=self.jump_std,
-                    size=n_jumps,
-                ).sum()
-            else:
-                jump_sum = 0.0
-
-            S[i + 1] = S[i] * np.exp(
-                (self.mu - self.jump_intensity * self.kJ - 0.5 * v_i) * self.dt
-                + np.sqrt(v_i) * self.sqrt_dt * z1[i]
-                + jump_sum
-            )
-
-        return {
-            "S": S,
-            "variance": variance,
-            "jump_count": jump_count,
-        }
+        return {"S": S, "variance": variance}

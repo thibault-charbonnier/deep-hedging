@@ -1,50 +1,30 @@
+from __future__ import annotations
+
 import numpy as np
-from typing import Any
-from .base_process import BaseProcess
 
 
-class GBMProcess(BaseProcess):
-    """
-    Implementation of the BaseProcess abstract class for the Geometric Brownian Motion (GBM) process.
+class GBMProcess:
+    """Geometric Brownian Motion spot process: ``dS = mu S dt + sigma S dW``."""
 
-    We simulate the discretized version of the GBM SDE:
-        dS_t = mu * S_t * dt + sigma * S_t * dW_t
+    def __init__(self, simulation_cfg: dict) -> None:
+        self.n_steps = int(simulation_cfg["n_steps"])
+        self.maturity = float(simulation_cfg["maturity"])
+        self.S0 = float(simulation_cfg["S0"])
+        self.mu = float(simulation_cfg["gbm"].get("mu", 0.0))
+        self.sigma = float(simulation_cfg["gbm"]["sigma"])
+        self.dt = self.maturity / self.n_steps
+        self.sqrt_dt = np.sqrt(self.dt)
 
-    Model-specific parameters:
-        - mu : drift of the process
-        - sigma : (constant) volatility of the process
-    """
+    def simulate_paths(self, n_paths: int) -> dict[str, np.ndarray]:
+        """Simulate ``n_paths`` GBM trajectories, each of length ``n_steps + 1``.
 
-    def __init__(self, simulation_cfg: dict[str, Any]) -> None:
+        Returns ``{"S": array}`` of shape ``(n_paths, n_steps + 1)``.
         """
-        Parameters
-        ----------
-        simulation_cfg : dict
-            Configuration dictionary containing the base information for the simulation and model-specific parameters.
-        """
-        super().__init__(simulation_cfg)
-
-        self.mu = float(simulation_cfg.get("gbm").get("mu"))
-        self.sigma = float(simulation_cfg.get("gbm").get("sigma"))
-
-    def simulate_one_path(self) -> dict[str, np.ndarray]:
-        """
-        Simulate one path of the GBM process.
-
-        Returns
-        -------
-        dict[str, np.ndarray]
-            A dictionary containing:
-            - "S": the simulated price path of the GBM process
-        """
-        z = self.rng.standard_normal(self.n_steps)
-
-        log_returns = (
-            (self.mu - 0.5 * self.sigma**2) * self.dt
-            + self.sigma * self.sqrt_dt * z
-        )
-
-        S = self._init_1d_path(self.S0)
-        S[1:] = self.S0 * np.exp(np.cumsum(log_returns))
-
+        n_paths = int(n_paths)
+        z = np.random.normal(size=(n_paths, self.n_steps))
+        log_returns = (self.mu - 0.5 * self.sigma ** 2) * self.dt + self.sigma * self.sqrt_dt * z
+        log_prices = np.cumsum(log_returns, axis=1)
+        S = np.empty((n_paths, self.n_steps + 1), dtype=float)
+        S[:, 0] = self.S0
+        S[:, 1:] = self.S0 * np.exp(log_prices)
         return {"S": S}

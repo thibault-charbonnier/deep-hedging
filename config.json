@@ -1,8 +1,7 @@
 {
     "simulation":
     {
-        "n_steps": 100,
-        "maturity": 1.0,
+        "maturity": 0.25,
         "S0": 100.0,
         "gbm":
         {
@@ -13,8 +12,8 @@
         {
             "mu": 0.05,
             "sigma0": 0.2,
-            "nu": 0.3,
-            "rho": -0.5
+            "nu": 0.6,
+            "rho": -0.4
         },
         "svj":
         {
@@ -36,24 +35,42 @@
     },
     "training_schedule":
     {
-        "train_episodes": 500,
-        "eval_episodes": 200,
-        "update_frequency": 10
+        "train_episodes": 10000,
+        "eval_episodes": 5000,
+        "update_frequency": 5
     },
     "hedging_agent":
     {
         "exploration_rate_start": 1.0,
-        "exploration_rate_end": 0.05,
-        "exploration_rate_decay": 0.995,
-        "learning_rate": 0.0005,
+        "exploration_rate_end": 0.0,
+        "exploration_rate_decay": 0.9999,
+        "actor_learning_rate": 0.0001,
+        "critic_learning_rate": 0.001,
         "discount_factor": 1.0,
-        "learning_bactch_size": 128,
-        "action_grid_size": 11
+        "learning_batch_size": 128,
+        "replay_capacity": 200000,
+        "min_buffer_size": 1024,
+        "target_update_freq": 100,
+        "risk_lambda": 1.5,
+        "n_quantiles": 51,
+        "cvar_alpha": 0.95,
+        "huber_kappa": 1.0,
+        "action_low": 0.0,
+        "action_high": 1.0
     },
     "derivative":
     {
         "strike": 100.0,
-        "rf_rate": 0.01,
-        "div_rate": 0.01
+        "rf_rate": 0.0,
+        "div_rate": 0.0
+    },
+    "run":
+    {
+        "maturity": 0.25,
+        "rebalancing": 1,
+        "process": "GBM",
+        "agent": "DeepDPG",
+        "benchmark": "BsDelta",
+        "seed": 42
     }
 }
