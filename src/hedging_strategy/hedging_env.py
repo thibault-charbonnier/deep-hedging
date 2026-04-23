@@ -18,14 +18,13 @@ class HedgingEnv:
     def __init__(self, config: dict[str, Any]) -> None:
         self.transac_cost = float(config["hedging_env"]["transaction_cost"])
         self.position_sign = float(config["hedging_env"]["position_sign"])
-        self.derivative_type = config.get("derivative", {}).get("option_type", "call")
         self.valuation_sigma = float(config["simulation"]["gbm"]["sigma"])
         self.maturity = float(config["simulation"]["maturity"])
         self.valuation_engine = BSValuation(
             strike=config["derivative"]["strike"], maturity=self.maturity,
             rate=config["derivative"].get("rf_rate", 0.0),
             dividend=config["derivative"].get("div_rate", 0.0),
-            option_type=self.derivative_type)
+            option_type=config.get("derivative", {}).get("option_type", "call"))
 
     def setup_env(self, path_data):
         if isinstance(path_data, dict):
@@ -52,10 +51,7 @@ class HedgingEnv:
         self._precomputed_v = self.position_sign * np.asarray(p, dtype=float)
 
         self.i = 0
-        self.v_prev = float(self._precomputed_v[0])
         self.h_prev = 0.0
-        self.episode_reward = 0.0
-        self.episode_cost = 0.0
         return self._build_state(0, 0.0)
 
     def set_initial_hedge(self, H0: float) -> None:
@@ -78,28 +74,23 @@ class HedgingEnv:
         trade_cost = self.transac_cost * abs(spot_next * (H_next - H_i))
         reward = (V_next - V_i) + H_i * (spot_next - spot_t) - trade_cost
 
-
         done = i == self.n_steps - 1
         liquidation_cost = 0.0
         if done:
             liquidation_cost = self.transac_cost * spot_next * abs(H_next)
             reward -= liquidation_cost
 
-        self.episode_reward += reward
-        self.episode_cost += -reward
         self.i += 1
         self.h_prev = 0.0 if done else H_next
-        self.v_prev = V_next
         next_state = self._build_state(self.i, self.h_prev)
         info = {"spot_t": spot_t, "spot_next": spot_next, "hedge": H_next,
                 "trade_cost": trade_cost, "liquidation_cost": liquidation_cost,
-                "reward": reward, "cost": -reward,
-                "episode_reward": self.episode_reward, "episode_cost": self.episode_cost}
+                "reward": reward, "cost": -reward}
         return next_state, reward, done, info
 
     def _build_state(self, step, hedge_pos):
-        idx = min(step, len(self.path_data) - 1)
-        t = self.times[min(step, len(self.times) - 1)]
+        idx = step
+        t = self.times[step]
         spot, vol = self.path_data[idx], self._vol_path[idx]
         ttm = max(self.maturity - t, 0.0)
         return np.asarray([

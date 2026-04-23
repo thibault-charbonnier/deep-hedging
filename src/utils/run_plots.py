@@ -1,276 +1,198 @@
 from __future__ import annotations
 
 from pathlib import Path
-
 import json
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from scipy.stats import norm
-from IPython.display import display
+
+from ..hedging_result import _nanskewness
+
+plt.rcParams.update(
+    {
+        "figure.dpi": 110,
+        "savefig.dpi": 150,
+        "savefig.bbox": "tight",
+        "font.family": "sans-serif",
+        "font.size": 10,
+        "axes.titlesize": 12,
+        "axes.titleweight": "bold",
+        "axes.labelsize": 10,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "axes.grid": True,
+        "grid.alpha": 0.25,
+        "grid.linestyle": "--",
+        "grid.linewidth": 0.5,
+        "legend.frameon": False,
+        "legend.fontsize": 9,
+        "lines.linewidth": 1.8,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+    }
+)
+
+COLOR_RL = "#2E86AB"
+COLOR_BM = "#E07A5F"
+COLOR_NEUTRAL = "#6C757D"
+COLOR_POSITIVE = "#52B788"
+COLOR_NEGATIVE = "#C1121F"
 
 
-def _load_train_data(run_id: str, outputs_dir: str | Path | None = None) -> tuple[Path, pd.DataFrame, pd.DataFrame]:
-    root = Path(outputs_dir) if outputs_dir is not None else Path(__file__).resolve().parents[2] / "outputs"
-    run_dir = root / run_id
-    train_steps = pd.read_csv(run_dir / "data" / "train_steps.csv")
-    train_ep = pd.read_csv(run_dir / "tables" / "train_episodes.csv")
-    return run_dir, train_steps, train_ep
+def _load_csv_optional(path: Path) -> pd.DataFrame | None:
+    return pd.read_csv(path) if path.exists() else None
 
 
-def _plot_train_loss_core(run_id: str, train_steps: pd.DataFrame, smooth_window: int, show_raw: bool) -> pd.DataFrame:
-    loss_df = train_steps.loc[train_steps["loss"].notna(), ["loss"]].copy()
-    loss_df["update_idx"] = np.arange(len(loss_df), dtype=int)
-    loss_df["loss_smooth"] = loss_df["loss"].rolling(smooth_window, min_periods=1).mean()
+def _load_run_artifacts(run_id: str, outputs_dir: str | Path | None) -> dict[str, object]:
+    run_dir = (Path(outputs_dir) if outputs_dir is not None else Path(__file__).resolve().parents[2] / "outputs") / run_id
+    cfg = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
 
-    plt.figure(figsize=(9, 4))
-    if show_raw:
-        plt.plot(loss_df["update_idx"], loss_df["loss"], alpha=0.25, label="loss raw")
-    plt.plot(
-        loss_df["update_idx"],
-        loss_df["loss_smooth"],
-        linewidth=2,
-        label=f"loss smooth ({smooth_window})",
-    )
-    plt.title(f"Training loss - {run_id}")
-    plt.xlabel("Update index")
-    plt.ylabel("Loss")
-    plt.grid(alpha=0.3)
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
-
-    return loss_df
+    artifacts: dict[str, object] = {
+        "cfg": cfg,
+        "rl_steps": pd.read_csv(run_dir / "data" / "eval_agent_steps.csv"),
+        "bm_steps": pd.read_csv(run_dir / "data" / "eval_benchmark_steps.csv"),
+        "rl_episodes": pd.read_csv(run_dir / "tables" / "eval_agent_episodes.csv"),
+        "bm_episodes": pd.read_csv(run_dir / "tables" / "eval_benchmark_episodes.csv"),
+        "rl_summary": pd.read_csv(run_dir / "tables" / "eval_agent_summary.csv"),
+        "bm_summary": pd.read_csv(run_dir / "tables" / "eval_benchmark_summary.csv"),
+        "train_steps": _load_csv_optional(run_dir / "data" / "train_steps.csv"),
+        "train_episodes": _load_csv_optional(run_dir / "tables" / "train_episodes.csv"),
+    }
+    return artifacts
 
 
-def plot_train_loss(
-    run_id: str,
-    outputs_dir: str | Path | None = None,
-    smooth_window: int = 200,
-    show_raw: bool = True,
-) -> pd.DataFrame:
-    """Plot train loss for one run."""
-    run_dir, train_steps, _ = _load_train_data(run_id, outputs_dir)
-    loss_df = _plot_train_loss_core(run_id, train_steps, smooth_window, show_raw)
+def _get_scalar(df: pd.DataFrame | None, column: str) -> float:
+    if df is None or df.empty or column not in df.columns:
+        return float("nan")
+    return float(df.iloc[0][column])
 
-    print(f"Run utilise: {run_id}")
-    print(f"Source: {run_dir / 'data' / 'train_steps.csv'}")
-    return loss_df
+
+def _bar_with_labels(ax: plt.Axes, values: list[float], title: str, ylabel: str) -> None:
+    bars = ax.bar([0, 1], values, width=0.5, color=[COLOR_RL, COLOR_BM], edgecolor="white")
+    ax.bar_label(bars, fmt="%.2f", padding=3, fontsize=9)
+    ax.set_xticks([0, 1], ["RL", "Benchmark"])
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+
+
+def _plot_training_loss(ax: plt.Axes, train_steps: pd.DataFrame | None) -> None:
+    ax.set_title("Training Loss")
+    ax.set_xlabel("Update step")
+    ax.set_ylabel("Loss")
+    if train_steps is None or train_steps.empty or "loss" not in train_steps.columns:
+        ax.text(0.5, 0.5, "No training data available", ha="center", va="center", color=COLOR_NEUTRAL, fontsize=10)
+        ax.set_axis_off()
+        return
+    loss_values = train_steps["loss"].dropna().to_numpy(dtype=float)
+    if loss_values.size == 0:
+        _hide_training_panel(ax)
+        return
+    x = np.arange(len(loss_values), dtype=int)
+    smoothed = pd.Series(loss_values).rolling(200, min_periods=1).mean().to_numpy()
+    ax.plot(x, loss_values, color=COLOR_NEUTRAL, alpha=0.25, label="raw")
+    ax.plot(x, smoothed, color=COLOR_RL, label="smoothed")
+    ax.set_yscale("log")
+    ax.legend()
+
+
+def _plot_training_episode_cost(ax: plt.Axes, train_episodes: pd.DataFrame | None) -> None:
+    ax.set_title("Training Episode Cost")
+    ax.set_xlabel("Episode")
+    ax.set_ylabel("Total cost")
+    if train_episodes is None or train_episodes.empty or "total_cost" not in train_episodes.columns:
+        ax.text(0.5, 0.5, "No training data available", ha="center", va="center", color=COLOR_NEUTRAL, fontsize=10)
+        ax.set_axis_off()
+        return
+    x = train_episodes["episode_idx"].to_numpy()
+    y = train_episodes["total_cost"].astype(float).to_numpy()
+    series = pd.Series(y)
+    rolling_mean = series.rolling(100, min_periods=1).mean().to_numpy()
+    rolling_std = series.rolling(100, min_periods=1).std().fillna(0.0).to_numpy()
+    ax.plot(x, y, color=COLOR_NEUTRAL, alpha=0.2, label="raw")
+    ax.fill_between(x, rolling_mean - rolling_std, rolling_mean + rolling_std, color=COLOR_RL, alpha=0.2)
+    ax.plot(x, rolling_mean, color=COLOR_RL, linewidth=2, label="mean ± 1σ")
+    ax.legend()
 
 
 def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
-    from src.hedging_result import _nanskewness
+    artifacts = _load_run_artifacts(run_id, outputs_dir)
+    cfg = artifacts["cfg"]
+    rl_steps = artifacts["rl_steps"]
+    bm_steps = artifacts["bm_steps"]
+    rl_episodes = artifacts["rl_episodes"]
+    bm_episodes = artifacts["bm_episodes"]
+    rl_summary = artifacts["rl_summary"]
+    bm_summary = artifacts["bm_summary"]
+    train_steps = artifacts["train_steps"]
+    train_episodes = artifacts["train_episodes"]
 
-    root = Path(outputs_dir) if outputs_dir is not None else Path(__file__).resolve().parents[2] / "outputs"
-    run_dir = root / run_id
+    y_rl = _get_scalar(rl_summary, "y_objective")
+    y_bm = _get_scalar(bm_summary, "y_objective")
+    mean_rl = _get_scalar(rl_summary, "mean_total_cost")
+    mean_bm = _get_scalar(bm_summary, "mean_total_cost")
+    std_rl = _get_scalar(rl_summary, "std_total_cost")
+    std_bm = _get_scalar(bm_summary, "std_total_cost")
+    improvement_pct = 100.0 * (y_bm - y_rl) / y_bm if y_bm not in (0.0, np.nan) and np.isfinite(y_bm) and y_bm != 0 else float("nan")
 
-    rl_summary = pd.read_csv(run_dir / "tables" / "eval_agent_summary.csv")
-    bm_summary = pd.read_csv(run_dir / "tables" / "eval_benchmark_summary.csv")
-    rl_steps = pd.read_csv(run_dir / "data" / "eval_agent_steps.csv")
-    bm_steps = pd.read_csv(run_dir / "data" / "eval_benchmark_steps.csv")
-    cfg = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
+    skew_rl = _nanskewness(rl_episodes["total_cost"].tolist()) if not rl_episodes.empty and "total_cost" in rl_episodes.columns else float("nan")
+    skew_bm = _nanskewness(bm_episodes["total_cost"].tolist()) if not bm_episodes.empty and "total_cost" in bm_episodes.columns else float("nan")
 
-    # Load episode data for skewness calculation
-    rl_episodes = pd.read_csv(run_dir / "tables" / "eval_agent_episodes.csv")
-    bm_episodes = pd.read_csv(run_dir / "tables" / "eval_benchmark_episodes.csv")
+    fig, axes = plt.subplots(4, 2, figsize=(14, 18))
+    axes = np.asarray(axes)
 
-    y_rl = float(rl_summary.loc[0, "y_objective"])
-    y_bm = float(bm_summary.loc[0, "y_objective"])
-    mean_rl = float(rl_summary.loc[0, "mean_total_cost"])
-    std_rl = float(rl_summary.loc[0, "std_total_cost"])
-    mean_bm = float(bm_summary.loc[0, "mean_total_cost"])
-    std_bm = float(bm_summary.loc[0, "std_total_cost"])
-    improvement_pct = 100.0 * (y_bm - y_rl) / y_bm if y_bm != 0 else float("nan")
+    ax = axes[0, 0]
+    ax.set_title("RL Holding vs Benchmark Holding")
+    ax.hexbin(bm_steps["action"], rl_steps["action"], gridsize=40, cmap="Blues", mincnt=1)
+    lims = [
+        float(min(bm_steps["action"].min(), rl_steps["action"].min())),
+        float(max(bm_steps["action"].max(), rl_steps["action"].max())),
+    ]
+    ax.plot(lims, lims, linestyle="--", color=COLOR_NEUTRAL, linewidth=1.0)
+    ax.text(0.05, 0.95, "Under-hedge", transform=ax.transAxes, ha="left", va="top", fontsize=9, color=COLOR_NEUTRAL, alpha=0.8)
+    ax.text(0.95, 0.05, "Over-hedge", transform=ax.transAxes, ha="right", va="bottom", fontsize=9, color=COLOR_NEUTRAL, alpha=0.8)
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xlabel("Benchmark holding")
+    ax.set_ylabel("RL holding")
+    ax.set_xlim(lims)
+    ax.set_ylim(lims)
 
-    # Calculate skewness from episode data
-    skew_rl = _nanskewness(rl_episodes["total_cost"].tolist())
-    skew_bm = _nanskewness(bm_episodes["total_cost"].tolist())
+    ax = axes[0, 1]
+    ax.set_title("Total Cost Distribution")
+    rl_costs = rl_episodes["total_cost"].astype(float).to_numpy() if not rl_episodes.empty and "total_cost" in rl_episodes.columns else np.asarray([], dtype=float)
+    bm_costs = bm_episodes["total_cost"].astype(float).to_numpy() if not bm_episodes.empty and "total_cost" in bm_episodes.columns else np.asarray([], dtype=float)
+    if rl_costs.size and bm_costs.size:
+        ax.hist(rl_costs, bins=30, density=True, alpha=0.55, edgecolor="white", color=COLOR_RL, label="RL")
+        ax.hist(bm_costs, bins=30, density=True, alpha=0.55, edgecolor="white", color=COLOR_BM, label="Benchmark")
+        ax.axvline(float(np.mean(rl_costs)), color=COLOR_RL, linestyle="--")
+        ax.axvline(float(np.mean(bm_costs)), color=COLOR_BM, linestyle="--")
+        ax.legend()
+    else:
+        ax.text(0.5, 0.5, "No evaluation data available", ha="center", va="center", color=COLOR_NEUTRAL, fontsize=10)
+    ax.set_xlabel("Total hedging cost")
+    ax.set_ylabel("Density")
 
-    cmp = pd.DataFrame(
-        [
-            {"method": "RL (DeepDPG)", "mean_total_cost": mean_rl, "std_total_cost": std_rl, "skew_total_cost": skew_rl, "y_objective": y_rl},
-            {"method": "Benchmark", "mean_total_cost": mean_bm, "std_total_cost": std_bm, "skew_total_cost": skew_bm, "y_objective": y_bm},
-        ]
+    _bar_with_labels(axes[1, 0], [y_rl, y_bm], "Y Objective", "Y objective")
+    _bar_with_labels(axes[1, 1], [mean_rl, mean_bm], "Mean Total Cost", "Mean total cost")
+    _bar_with_labels(axes[2, 0], [std_rl, std_bm], "Std Total Cost", "Std total cost")
+    _bar_with_labels(axes[2, 1], [skew_rl, skew_bm], "Skewness", "Skewness")
+    axes[2, 1].axhline(0, color=COLOR_NEUTRAL, linewidth=0.8)
+
+    _plot_training_loss(axes[3, 0], train_steps if isinstance(train_steps, pd.DataFrame) else None)
+    _plot_training_episode_cost(axes[3, 1], train_episodes if isinstance(train_episodes, pd.DataFrame) else None)
+
+    fig.suptitle(f"Hedging Run — {run_id}", fontsize=14, fontweight="bold", y=0.995)
+    fig.text(
+        0.5,
+        0.975,
+        f"Process={cfg['run']['process']} | Agent={cfg['run']['agent']} | Benchmark={cfg['run']['benchmark']} | "
+        f"κ={cfg['hedging_env']['transaction_cost']:.1%} | T={cfg['simulation']['maturity']:.4f}y | "
+        f"Y improvement={improvement_pct:+.2f}%",
+        ha="center",
+        fontsize=10,
+        alpha=0.7,
     )
-    print(f"Run utilise: {run_id}")
-    print(f"Improvement RL vs Benchmark = {improvement_pct:.2f}%")
-    display(cmp)
-
-    # Additional skewness statistics
-    print("\nSkewness Analysis:")
-    print(f"  RL Agent skewness:    {skew_rl:>8.4f}")
-    print(f"  Benchmark skewness:   {skew_bm:>8.4f}")
-    print(f"  Difference (RL-BM):   {skew_rl - skew_bm:>8.4f}")
-
-    plt.figure(figsize=(6, 4))
-    plt.bar(cmp["method"], cmp["y_objective"])
-    plt.ylabel("Y objective")
-    plt.title(f"RL vs Benchmark | Improvement = {improvement_pct:.2f}%")
-    plt.tight_layout()
-    plt.show()
-
-    K = float(cfg["derivative"]["strike"])
-    r = float(cfg["derivative"].get("rf_rate", 0.0))
-    q = float(cfg["derivative"].get("div_rate", 0.0))
-    sigma = float(cfg["simulation"]["gbm"]["sigma"])
-    maturity = float(cfg["simulation"]["maturity"])
-
-    def bs_delta_call(spot, strike, ttm, rate, div, vol):
-        if ttm <= 1e-12:
-            return 1.0 if spot > strike else 0.0
-        d1 = (np.log(spot / strike) + (rate - div + 0.5 * vol**2) * ttm) / (vol * np.sqrt(ttm))
-        return np.exp(-div * ttm) * norm.cdf(d1)
-
-    ttm_rl = np.maximum(maturity - rl_steps["time"].to_numpy(), 0.0)
-    delta_bm = np.array([bs_delta_call(s, K, t, r, q, sigma) for s, t in zip(bm_steps["spot"].to_numpy(), np.maximum(maturity - bm_steps["time"].to_numpy(), 0.0))])
-    delta_rl = np.array([bs_delta_call(s, K, t, r, q, sigma) for s, t in zip(rl_steps["spot"].to_numpy(), ttm_rl)])
-    hold_rl = rl_steps["action"].to_numpy()
-    hold_bm = bm_steps["action"].to_numpy()
-
-    plt.figure(figsize=(6.5, 6.5))
-    plt.scatter(delta_rl, hold_rl, s=4, alpha=0.25, label="RL policy")
-    lo = min(delta_rl.min(), hold_rl.min())
-    hi = max(delta_rl.max(), hold_rl.max())
-    plt.plot([lo, hi], [lo, hi], "k--", lw=1, label="delta line (y=x)")
-    plt.xlabel("Delta hedge (%)")
-    plt.ylabel("Current holding (%)")
-    plt.title("Under-hedge / Over-hedge vs Delta")
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
-
-    rl_vs_bm = pd.DataFrame(
-        {
-            "episode_idx": rl_steps["episode_idx"],
-            "step_idx": rl_steps["step_idx"],
-            "delta_rl": hold_rl,
-            "delta_benchmark": hold_bm,
-            "trade_cost_rl": rl_steps["trade_cost"],
-            "trade_cost_benchmark": bm_steps["trade_cost"],
-        }
-    )
-    rl_vs_bm["delta_diff"] = rl_vs_bm["delta_rl"] - rl_vs_bm["delta_benchmark"]
-    rl_vs_bm["trade_cost_total_rl"] = rl_steps["trade_cost"] + rl_steps["liquidation_cost"]
-    rl_vs_bm["trade_cost_total_bm"] = bm_steps["trade_cost"] + bm_steps["liquidation_cost"]
-
-    plt.figure(figsize=(6.5, 6.5))
-    plt.scatter(rl_vs_bm["delta_benchmark"], rl_vs_bm["delta_rl"], s=4, alpha=0.25)
-    lo = min(rl_vs_bm["delta_benchmark"].min(), rl_vs_bm["delta_rl"].min())
-    hi = max(rl_vs_bm["delta_benchmark"].max(), rl_vs_bm["delta_rl"].max())
-    plt.plot([lo, hi], [lo, hi], "k--", lw=1)
-    plt.xlabel("Delta benchmark")
-    plt.ylabel("Delta RL")
-    plt.title("RL vs Benchmark Delta")
-    plt.tight_layout()
-    plt.show()
-
-    plt.figure(figsize=(7, 4))
-    plt.hist(rl_vs_bm["delta_diff"], bins=60, alpha=0.85)
-    plt.axvline(0.0, color="k", linestyle="--", linewidth=1)
-    plt.xlabel("Delta RL - Delta benchmark")
-    plt.ylabel("Count")
-    plt.title("Distribution de l'ecart de hedge")
-    plt.tight_layout()
-    plt.show()
-
-    tc = pd.DataFrame(
-        [
-            {"method": "RL", "total_trade_cost": rl_vs_bm["trade_cost_total_rl"].sum()},
-            {"method": "Benchmark", "total_trade_cost": rl_vs_bm["trade_cost_total_bm"].sum()},
-        ]
-    )
-    plt.figure(figsize=(6, 4))
-    plt.bar(tc["method"], tc["total_trade_cost"])
-    plt.ylabel("Total transaction cost")
-    plt.title("RL vs Benchmark - Cost de trade complet")
-    plt.tight_layout()
-    plt.show()
-
-    # Skewness comparison
-    plt.figure(figsize=(6, 4))
-    plt.bar(cmp["method"], cmp["skew_total_cost"])
-    plt.ylabel("Skewness of total cost")
-    plt.title("RL vs Benchmark - Skewness")
-    plt.axhline(y=0, color="k", linestyle="--", linewidth=0.5)
-    plt.tight_layout()
-    plt.show()
-
-    # Distribution of total costs with skewness visualization
-    plt.figure(figsize=(10, 5))
-    plt.hist(rl_episodes["total_cost"], bins=30, alpha=0.6, label=f"RL (skew={skew_rl:.3f})", color="blue")
-    plt.hist(bm_episodes["total_cost"], bins=30, alpha=0.6, label=f"Benchmark (skew={skew_bm:.3f})", color="orange")
-    plt.xlabel("Total hedging cost")
-    plt.ylabel("Count")
-    plt.title("Distribution of total cost - RL vs Benchmark")
-    plt.legend()
-    plt.tight_layout()
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
     plt.show()
 
 
-def plot_run2(
-    run_id: str,
-    outputs_dir: str | Path | None = None,
-    smooth_window: int = 200,
-    show_raw: bool = True,
-) -> None:
-    """Simple learning diagnostics for one run."""
-    _, train_steps, train_ep = _load_train_data(run_id, outputs_dir)
-
-    # 1) Loss over updates (raw + smooth)
-    _plot_train_loss_core(run_id, train_steps, smooth_window, show_raw)
-
-    # 2) Total cost per episode (raw + smooth)
-    ep_idx = train_ep["episode_idx"]
-    total_cost = train_ep["total_cost"]
-    total_cost_smooth = total_cost.rolling(100, min_periods=1).mean()
-    plt.figure(figsize=(9, 4))
-    plt.plot(ep_idx, total_cost, alpha=0.25, label="total_cost raw")
-    plt.plot(ep_idx, total_cost_smooth, linewidth=2, label="total_cost smooth (100)")
-    plt.title(f"Training episode cost - {run_id}")
-    plt.xlabel("Episode")
-    plt.ylabel("Total cost")
-    plt.grid(alpha=0.3)
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
-
-    # 3) Early vs late total-cost distributions
-    split_idx = len(train_ep) // 2
-    early = train_ep.iloc[:split_idx]["total_cost"]
-    late = train_ep.iloc[split_idx:]["total_cost"]
-    plt.figure(figsize=(8, 4))
-    plt.hist(early, bins=30, alpha=0.6, label="early")
-    plt.hist(late, bins=30, alpha=0.6, label="late")
-    plt.title(f"Early vs late total cost - {run_id}")
-    plt.xlabel("Total cost")
-    plt.ylabel("Count")
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
-
-    # 4) Policy stabilization proxy: rolling std of actions
-    action_std = train_steps["action"].rolling(500, min_periods=1).std().fillna(0.0)
-    plt.figure(figsize=(9, 4))
-    plt.plot(action_std, linewidth=2)
-    plt.title(f"Rolling std(action) - {run_id}")
-    plt.xlabel("Train step")
-    plt.ylabel("Rolling std")
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-
-
-def plot_all_graphs(
-    run_id: str,
-    outputs_dir: str | Path | None = None,
-    smooth_window: int = 200,
-    show_raw: bool = True,
-) -> None:
-    """Run all available plots for one run (learning + RL vs benchmark)."""
-    plot_run2(
-        run_id=run_id,
-        outputs_dir=outputs_dir,
-        smooth_window=smooth_window,
-        show_raw=show_raw,
-    )
-    plot_run(run_id=run_id, outputs_dir=outputs_dir)

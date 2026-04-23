@@ -43,7 +43,7 @@ class Orchestrator:
             state_init = self.env.setup_env(path)
             H0 = self.agent.act(state_init, eval_mode=False)
             self.env.set_initial_hedge(H0)
-            setup_cost = self.config["hedging_env"]["transaction_cost"] * abs(float(path["S"][0]) * float(H0))
+            setup_cost = self.env.transac_cost * abs(float(path["S"][0]) * float(H0))
             er = EpisodeResult(split="train", episode_idx=ep, times=self.env.times, path_data=path)
             state = np.asarray(self.env._build_state(self.env.i, self.env.h_prev), dtype=np.float32)
             self.agent.store_transition(state_init, H0, -float(setup_cost), state, False)
@@ -84,7 +84,7 @@ class Orchestrator:
             state = self.env.setup_env(path)
             H0 = self.agent.act(state, eval_mode=True)
             self.env.set_initial_hedge(H0)
-            setup_cost = self.config["hedging_env"]["transaction_cost"] * abs(float(path["S"][0]) * float(H0))
+            setup_cost = self.env.transac_cost * abs(float(path["S"][0]) * float(H0))
             er = EpisodeResult(split="eval_agent", episode_idx=ep, times=self.env.times, path_data=path)
             er.add_step(
                 action=H0,
@@ -108,16 +108,16 @@ class Orchestrator:
             res.add_episode(er, type="eval_agent")
         return res
 
-    def test_benchmark(self, benchmark_override=None):
+    def test_benchmark(self):
         self._ensure_eval_paths()
-        bench = benchmark_override or self.benchmark
+        bench = self.benchmark
         res = HedgingResult()
         for ep in range(self.eval_episodes):
             path = self._ep_path(self.eval_paths, ep)
             state = self.env.setup_env(path)
             H0 = bench(state)
             self.env.set_initial_hedge(H0)
-            setup_cost = self.config["hedging_env"]["transaction_cost"] * abs(float(path["S"][0]) * float(H0))
+            setup_cost = self.env.transac_cost * abs(float(path["S"][0]) * float(H0))
             er = EpisodeResult(split="eval_benchmark", episode_idx=ep, times=self.env.times, path_data=path)
             er.add_step(
                 action=H0,

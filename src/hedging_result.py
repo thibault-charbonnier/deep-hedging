@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -44,7 +44,6 @@ class EpisodeResult:
     episode_idx: int
     path_data: dict[str, np.ndarray]
     times: np.ndarray
-    metadata: dict[str, Any] = field(default_factory=dict)
 
     actions: list[float] = field(default_factory=list)
     rewards: list[float] = field(default_factory=list)
@@ -122,7 +121,7 @@ class HedgingResult:
         selected: list[SplitType] = [split] if split else list(ALL_SPLITS)
         frames: list[pd.DataFrame] = []
         for key in selected:
-            for ep in self.episodes[cast(SplitType, key)]:
+            for ep in self.episodes[key]:
                 frames.append(ep.step_frame())
         return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
@@ -130,7 +129,7 @@ class HedgingResult:
         selected: list[SplitType] = [split] if split else list(ALL_SPLITS)
         rows: list[dict[str, Any]] = []
         for key in selected:
-            for ep in self.episodes[cast(SplitType, key)]:
+            for ep in self.episodes[key]:
                 costs = ep.costs
                 trade_costs = ep.trade_costs
                 liquidation_costs = ep.liquidation_costs

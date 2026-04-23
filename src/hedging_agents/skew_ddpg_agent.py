@@ -155,43 +155,6 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
 
         return float((loss_c1 + loss_c2 + loss_c3 + actor_loss.detach()).item())
 
-    def save(self, path):
-        torch.save(
-            {
-                "actor": self.actor.state_dict(),
-                "actor_target": self.actor_target.state_dict(),
-                "critic_1": self.critic_1.state_dict(),
-                "critic_1_target": self.critic_1_target.state_dict(),
-                "critic_2": self.critic_2.state_dict(),
-                "critic_2_target": self.critic_2_target.state_dict(),
-                "critic_3": self.critic_3.state_dict(),
-                "critic_3_target": self.critic_3_target.state_dict(),
-                "actor_opt": self.actor_opt.state_dict(),
-                "critic_1_opt": self.critic_1_opt.state_dict(),
-                "critic_2_opt": self.critic_2_opt.state_dict(),
-                "critic_3_opt": self.critic_3_opt.state_dict(),
-                "epsilon": self.epsilon,
-                "learn_steps": self.learn_steps,
-            },
-            path,
-        )
-
-    def load(self, path):
-        ckpt = torch.load(path, map_location=self.device)
-        self.actor.load_state_dict(ckpt["actor"])
-        self.actor_target.load_state_dict(ckpt["actor_target"])
-        self.critic_1.load_state_dict(ckpt["critic_1"])
-        self.critic_1_target.load_state_dict(ckpt["critic_1_target"])
-        self.critic_2.load_state_dict(ckpt["critic_2"])
-        self.critic_2_target.load_state_dict(ckpt["critic_2_target"])
-        self.critic_3.load_state_dict(ckpt["critic_3"])
-        self.critic_3_target.load_state_dict(ckpt["critic_3_target"])
-        self.actor_opt.load_state_dict(ckpt["actor_opt"])
-        self.critic_1_opt.load_state_dict(ckpt["critic_1_opt"])
-        self.critic_2_opt.load_state_dict(ckpt["critic_2_opt"])
-        self.critic_3_opt.load_state_dict(ckpt["critic_3_opt"])
-        self.epsilon = float(ckpt.get("epsilon", self.epsilon))
-        self.learn_steps = int(ckpt.get("learn_steps", 0))
 
     def set_eval_mode(self):
         self.train_mode_enabled = False

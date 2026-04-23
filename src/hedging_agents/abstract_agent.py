@@ -8,7 +8,6 @@ import numpy as np
 
 class AbstractHedgingAgent(ABC):
     def __init__(self, agent_cfg: dict[str, Any]) -> None:
-        self.cfg = agent_cfg
         self.gamma = float(agent_cfg.get("discount_factor", 1.0))
 
     @abstractmethod
@@ -38,10 +37,3 @@ class AbstractHedgingAgent(ABC):
     def set_eval_mode(self) -> None:
         raise NotImplementedError
 
-    @abstractmethod
-    def save(self, path: str) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    def load(self, path: str) -> None:
-        raise NotImplementedError
