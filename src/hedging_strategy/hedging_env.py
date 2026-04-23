@@ -5,6 +5,11 @@ R_{i+1} = V_{i+1} - V_i + H_i(S_{i+1}-S_i) - κ|S_{i+1}(H_{i+1}-H_i)|
 Initial cost: -κ|S_0 H_0|      (paper convention)
 Final cost:   -κ|S_n H_n|
 
+At the terminal step we force H_n = 0 so the transaction cost at t = T is
+exactly the liquidation κ·S_n·|H_{n-1}|, matching the paper's "final reward
+= -κ|S_n H_n|" without double-billing (a separate rebalance to H_n and then
+a liquidation from H_n to 0).
+
 State (dim 4) = [holding, log(S/K), TTM/T, σ_t/σ_ref]
 """
 from __future__ import annotations
@@ -62,10 +67,22 @@ class HedgingEnv:
         self.h_prev = float(H0)
 
     def step(self, hedge: float):
-        hedge = float(hedge)
+        """Apply a rebalancing action, return (next_state, reward, done, info).
+
+        Paper Section 3.1 Accounting P&L:
+            R_{i+1} = V_{i+1} - V_i + H_i(S_{i+1} - S_i) - κ|S_{i+1}(H_{i+1} - H_i)|
+
+        At the terminal step (i = n-1) we force H_n = 0, so the transaction
+        cost is κ·S_n·|H_{n-1}|, which IS the paper's final liquidation cost.
+        The caller is expected to pass hedge = 0.0 at the terminal step
+        anyway (see orchestrator).
+        """
         i = self.i
+        done = (i == self.n_steps - 1)
         H_i = self.h_prev
-        H_next = hedge
+        # Force liquidation at T: no policy decision at the terminal step.
+        H_next = 0.0 if done else float(hedge)
+
         spot_t = float(self.path_data[i])
         spot_next = float(self.path_data[i + 1])
         V_i = float(self._precomputed_v[i])
@@ -73,19 +90,18 @@ class HedgingEnv:
 
         trade_cost = self.transac_cost * abs(spot_next * (H_next - H_i))
         reward = (V_next - V_i) + H_i * (spot_next - spot_t) - trade_cost
-
-        done = i == self.n_steps - 1
-        liquidation_cost = 0.0
-        if done:
-            liquidation_cost = self.transac_cost * spot_next * abs(H_next)
-            reward -= liquidation_cost
+        # At T the trade IS the liquidation κ·S_n·|H_{n-1}|: expose it
+        # separately for traceability, but do NOT subtract it a second time.
+        liquidation_cost = trade_cost if done else 0.0
 
         self.i += 1
         self.h_prev = 0.0 if done else H_next
         next_state = self._build_state(self.i, self.h_prev)
-        info = {"spot_t": spot_t, "spot_next": spot_next, "hedge": H_next,
-                "trade_cost": trade_cost, "liquidation_cost": liquidation_cost,
-                "reward": reward, "cost": -reward}
+        info = {
+            "spot_t": spot_t, "spot_next": spot_next, "hedge": H_next,
+            "trade_cost": trade_cost, "liquidation_cost": liquidation_cost,
+            "reward": reward, "cost": -reward,
+        }
         return next_state, reward, done, info
 
     def _build_state(self, step, hedge_pos):
@@ -99,4 +115,3 @@ class HedgingEnv:
             ttm / self.maturity if self.maturity > 0 else 0.0,
             vol / self.valuation_sigma,
         ], dtype=np.float32)
-

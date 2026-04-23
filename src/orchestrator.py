@@ -65,7 +65,13 @@ class Orchestrator:
             )
             done = False
             while not done:
-                action = self.agent.act(state, eval_mode=False)
+                # At t = T the hedge is contractually liquidated (H_n := 0).
+                # We don't consult the policy at the terminal step and we store
+                # a=0 in the buffer so the critic learns Q(s_term, 0) ≈ r_liq
+                # on the action actually executed — not on a phantom action
+                # that would train the critic to map every action to r_liq.
+                is_terminal = (self.env.i == self.env.n_steps - 1)
+                action = 0.0 if is_terminal else self.agent.act(state, eval_mode=False)
                 ns, reward, done, info = self.env.step(action)
                 self.agent.store_transition(state, action, reward, ns, done)
                 step_count += 1
@@ -102,15 +108,17 @@ class Orchestrator:
             state = np.asarray(self.env._build_state(self.env.i, self.env.h_prev), dtype=np.float32)
             done = False
             while not done:
-                action = self.agent.act(state, eval_mode=True)
+                # Same convention as train(): no policy call at terminal.
+                is_terminal = (self.env.i == self.env.n_steps - 1)
+                action = 0.0 if is_terminal else self.agent.act(state, eval_mode=True)
                 state, _, done, info = self.env.step(action)
                 er.add_step(action=action, info=info)
             res.add_episode(er, type="eval_agent")
         return res
 
-    def test_benchmark(self):
+    def test_benchmark(self, benchmark_override=None):
         self._ensure_eval_paths()
-        bench = self.benchmark
+        bench = benchmark_override or self.benchmark
         res = HedgingResult()
         for ep in range(self.eval_episodes):
             path = self._ep_path(self.eval_paths, ep)
@@ -135,7 +143,9 @@ class Orchestrator:
             state = np.asarray(self.env._build_state(self.env.i, self.env.h_prev), dtype=np.float32)
             done = False
             while not done:
-                action = bench(state)
+                # Same convention as train()/test(): force liquidation at T.
+                is_terminal = (self.env.i == self.env.n_steps - 1)
+                action = 0.0 if is_terminal else bench(state)
                 state, _, done, info = self.env.step(action)
                 er.add_step(action=action, info=info)
             res.add_episode(er, type="eval_benchmark")
