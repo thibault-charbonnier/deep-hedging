@@ -9,6 +9,21 @@ import pandas as pd
 
 from ..hedging_result import _nanskewness
 
+
+def _cbrt_m3_proxy(values: list[float] | np.ndarray, eps: float = 1e-8) -> float:
+    """Signed cube root of the third central moment.
+
+    Matches the actor-loss proxy used in SkewDDPG. Lives on the same
+    scale as `std` (and thus as `mean_total_cost`, `std_total_cost`),
+    not the dimensionless statistical skewness.
+    """
+    arr = np.asarray(list(values), dtype=float)
+    finite = arr[np.isfinite(arr)]
+    if finite.size < 3:
+        return float("nan")
+    m3 = float(np.mean((finite - finite.mean()) ** 3))
+    return float(np.sign(m3) * (abs(m3) + eps) ** (1.0 / 3.0))
+
 plt.rcParams.update(
     {
         "figure.dpi": 110,
@@ -138,7 +153,13 @@ def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
     skew_rl = _nanskewness(rl_episodes["total_cost"].tolist()) if not rl_episodes.empty and "total_cost" in rl_episodes.columns else float("nan")
     skew_bm = _nanskewness(bm_episodes["total_cost"].tolist()) if not bm_episodes.empty and "total_cost" in bm_episodes.columns else float("nan")
 
-    fig, axes = plt.subplots(4, 2, figsize=(14, 18))
+    # Cube-root-of-m3 proxy on the rescaled total_cost (% option price).
+    # Same formula as the SkewDDPG actor-loss penalty, so it lives on the
+    # same scale as mean/std in the plots above.
+    cbrt_rl = _cbrt_m3_proxy(rl_episodes["total_cost"].tolist()) if not rl_episodes.empty and "total_cost" in rl_episodes.columns else float("nan")
+    cbrt_bm = _cbrt_m3_proxy(bm_episodes["total_cost"].tolist()) if not bm_episodes.empty and "total_cost" in bm_episodes.columns else float("nan")
+
+    fig, axes = plt.subplots(5, 2, figsize=(14, 22))
     axes = np.asarray(axes)
 
     ax = axes[0, 0]
@@ -175,11 +196,15 @@ def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
     _bar_with_labels(axes[1, 0], [y_rl, y_bm], "Y Objective", "Y objective")
     _bar_with_labels(axes[1, 1], [mean_rl, mean_bm], "Mean Total Cost", "Mean total cost")
     _bar_with_labels(axes[2, 0], [std_rl, std_bm], "Std Total Cost", "Std total cost")
-    _bar_with_labels(axes[2, 1], [skew_rl, skew_bm], "Skewness", "Skewness")
+    _bar_with_labels(axes[2, 1], [skew_rl, skew_bm], "Skewness (statistical, dimensionless)", "Skewness")
     axes[2, 1].axhline(0, color=COLOR_NEUTRAL, linewidth=0.8)
 
-    _plot_training_loss(axes[3, 0], train_steps if isinstance(train_steps, pd.DataFrame) else None)
-    _plot_training_episode_cost(axes[3, 1], train_episodes if isinstance(train_episodes, pd.DataFrame) else None)
+    _bar_with_labels(axes[3, 0], [cbrt_rl, cbrt_bm], "Skew Proxy — cube-root of m₃ (% option price)", "sign(m₃)·|m₃|^(1/3)")
+    axes[3, 0].axhline(0, color=COLOR_NEUTRAL, linewidth=0.8)
+    axes[3, 1].set_axis_off()
+
+    _plot_training_loss(axes[4, 0], train_steps if isinstance(train_steps, pd.DataFrame) else None)
+    _plot_training_episode_cost(axes[4, 1], train_episodes if isinstance(train_episodes, pd.DataFrame) else None)
 
     fig.suptitle(f"Hedging Run — {run_id}", fontsize=14, fontweight="bold", y=0.995)
     fig.text(
