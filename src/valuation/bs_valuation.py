@@ -1,94 +1,46 @@
-import math
-from statistics import NormalDist
+import numpy as np
+from scipy.stats import norm
 
 
 class BSValuation:
-    """
-    Minimal valuation engine to price and compute option's delta.
-    """
-
-    def __init__(
-        self,
-        strike: float,
-        maturity: float,
-        rate: float = 0.0,
-        dividend: float = 0.0,
-        option_type: str = "call",
-    ) -> None:
+    def __init__(self, strike, maturity, rate=0.0, dividend=0.0, option_type="call"):
         self.K = float(strike)
         self.T = float(maturity)
         self.r = float(rate)
         self.q = float(dividend)
         self.option_type = option_type.lower()
 
-        if self.option_type not in {"call", "put"}:
-            raise ValueError("option_type must be either 'call' or 'put'.")
+    def price_and_delta(self, spot, t, sigma):
+        # Vectorized implementation (works for scalars and arrays).
+        S = np.asarray(spot, dtype=float)
+        tau_raw = np.maximum(self.T - np.asarray(t, dtype=float), 0.0)
+        sigma_arr = np.maximum(np.asarray(sigma, dtype=float), 1e-12)
 
-        self._normal = NormalDist()
+        tau = np.maximum(tau_raw, 1e-14)
+        sqrt_tau = np.sqrt(tau)
+        d1 = (np.log(S / self.K) + (self.r - self.q + 0.5 * sigma_arr**2) * tau) / (sigma_arr * sqrt_tau)
+        d2 = d1 - sigma_arr * sqrt_tau
 
-    def price_and_delta(
-        self,
-        spot: float,
-        t: float,
-        sigma: float,
-    ) -> tuple[float, float]:
-        """
-        Compute Black-Scholes price and delta at time t.
-
-        Parameters
-        ----------
-        spot : float
-            Current underlying spot S_t.
-        t : float
-            Current time.
-        sigma : float
-            Volatility used for valuation at time t.
-
-        Returns
-        -------
-        tuple[float, float]
-            (price, delta) of the given option.
-        """
-        S = float(spot)
-        sigma = max(float(sigma), 1e-12)
-        tau = max(self.T - float(t), 0.0)
-
-        # Terminal case (discretization robust)
-        if tau <= 1e-14:
-            if self.option_type == "call":
-                price = max(S - self.K, 0.0)
-                delta = 1.0 if S > self.K else 0.0
-            else:
-                price = max(self.K - S, 0.0)
-                delta = -1.0 if S < self.K else 0.0
-            return price, delta
-
-        sqrt_tau = math.sqrt(tau)
-
-        d1 = (
-            math.log(S / self.K)
-            + (self.r - self.q + 0.5 * sigma * sigma) * tau
-        ) / (sigma * sqrt_tau)
-
-        d2 = d1 - sigma * sqrt_tau
-
-        Nd1 = self._normal.cdf(d1)
-        Nd2 = self._normal.cdf(d2)
+        disc_q = np.exp(-self.q * tau)
+        disc_r = np.exp(-self.r * tau)
+        cdf_d1 = norm.cdf(d1)
 
         if self.option_type == "call":
-            price = (
-                S * math.exp(-self.q * tau) * Nd1
-                - self.K * math.exp(-self.r * tau) * Nd2
-            )
-            delta = math.exp(-self.q * tau) * Nd1
+            cdf_d2 = norm.cdf(d2)
+            price = S * disc_q * cdf_d1 - self.K * disc_r * cdf_d2
+            delta = disc_q * cdf_d1
+            # Exact terminal payoff/delta where tau is truly zero.
+            terminal_price = np.maximum(S - self.K, 0.0)
+            terminal_delta = np.where(S > self.K, 1.0, 0.0)
         else:
-            N_minus_d1 = self._normal.cdf(-d1)
-            N_minus_d2 = self._normal.cdf(-d2)
+            cdf_minus_d2 = norm.cdf(-d2)
+            cdf_minus_d1 = norm.cdf(-d1)
+            price = self.K * disc_r * cdf_minus_d2 - S * disc_q * cdf_minus_d1
+            delta = disc_q * (cdf_d1 - 1.0)
+            terminal_price = np.maximum(self.K - S, 0.0)
+            terminal_delta = np.where(S < self.K, -1.0, 0.0)
 
-            price = (
-                self.K * math.exp(-self.r * tau) * N_minus_d2
-                - S * math.exp(-self.q * tau) * N_minus_d1
-            )
-            delta = math.exp(-self.q * tau) * (Nd1 - 1.0)
-
+        is_terminal = tau_raw <= 1e-14
+        price = np.where(is_terminal, terminal_price, price)
+        delta = np.where(is_terminal, terminal_delta, delta)
         return price, delta

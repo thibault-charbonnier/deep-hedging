@@ -1,158 +1,142 @@
+from __future__ import annotations
 import logging
-from typing import Any
-from .hedging_strategy import HedgingEnv, HedgingResult, EpisodeResult
-from .utils.enums import AgentType, ProcessType, BenchmarkType
-
+import numpy as np
+from .hedging_strategy.hedging_env import HedgingEnv
+from .hedging_result import HedgingResult, EpisodeResult
 
 logger = logging.getLogger(__name__)
 
-class Orchestrator:
-    """
-    Module responsible for orchestrating the training and evaluation of the hedging agents.
 
-    It implements the following functionalities:
-        - Initialize the main modules (agent, environment).
-        - Orchestrate the interaction between :
-            * The simulated market data
-            * The valuation logic
-            * The hedging agent (ML logic)
-            * The deterministic benchmark(s)
-            * The environment (building the state, computing the reward)
-    """
-    def __init__(
-        self, 
-        config: dict[str, Any],
-        process_type: ProcessType,
-        agent_type: AgentType,
-        benchmark_type: BenchmarkType
-    ) -> None:
-        """
-        Parameters
-        ----------
-        config : dict[str, Any]
-            Configuration dictionary for the experiment runner.
-        process_type : ProcessType
-            The type of process to simulate the market data.
-        agent_type : AgentType
-            The type of hedging agent to train and evaluate.
-        benchmark_type : BenchmarkType
-            The type of benchmark strategy to evaluate.
-        """
-        logger.info("Initializing Orchestrator...")
+class Orchestrator:
+    def __init__(self, config, process_type, agent_type, benchmark_type):
         self.config = config
         self.env = HedgingEnv(config)
-
-        self.process = process_type.value(config.get("simulation"))
-        self.agent = agent_type.value(config.get("hedging_agent"))
+        self.process = process_type.value(config["simulation"])
+        self.agent = agent_type.value(config["hedging_agent"])
         self.benchmark = benchmark_type.value(config)
+        self.train_episodes = int(config["training_schedule"]["train_episodes"])
+        self.eval_episodes = int(config["training_schedule"]["eval_episodes"])
+        self.update_frequency = max(1, int(config["training_schedule"].get("update_frequency", 1)))
+        self.training_paths = None
+        self.eval_paths = None
 
-        self.train_episodes = config.get("training_schedule").get("train_episodes")
-        self.eval_episodes = config.get("training_schedule").get("eval_episodes")
-        self.target_update_freq = int(config.get("training_schedule").get("update_frequency"))
+    def _ep_path(self, paths, ep):
+        return {k: v[ep] for k, v in paths.items()}
 
-        logger.info(f"Simulating {self.train_episodes} training paths and {self.eval_episodes} evaluation paths...")
-        self.training_paths = self.process.simulate_paths(self.train_episodes)
-        self.eval_paths = self.process.simulate_paths(self.eval_episodes)
+    def _ensure_training_paths(self):
+        if self.training_paths is None:
+            logger.info("Simulating training paths...")
+            self.training_paths = self.process.simulate_paths(self.train_episodes)
 
-    def train(self) -> tuple[list[float], list[float]]:
-        """
-        Train the agent on the simulated data.
+    def _ensure_eval_paths(self):
+        if self.eval_paths is None:
+            logger.info("Simulating evaluation paths...")
+            self.eval_paths = self.process.simulate_paths(self.eval_episodes)
 
-        Returns
-        -------
-        tuple[list[float], list[float]]
-            A tuple containing the list of training costs and the list of training losses.
-        """
-        logger.info("Starting training...")
+    def train(self):
+        self._ensure_training_paths()
         self.agent.set_train_mode()
-
         res = HedgingResult()
-        for episode in range(self.train_episodes):
-            logger.info(f"\tAgent training episode {episode + 1}/{self.train_episodes}...")
-
-            path_data = self.training_paths["S"][episode]
-            state = self.env.setup_env(path_data=path_data)
+        step_count = 0
+        for ep in range(self.train_episodes):
+            path = self._ep_path(self.training_paths, ep)
+            state_init = self.env.setup_env(path)
+            H0 = self.agent.act(state_init, eval_mode=False)
+            self.env.set_initial_hedge(H0)
+            setup_cost = self.env.transac_cost * abs(float(path["S"][0]) * float(H0))
+            er = EpisodeResult(split="train", episode_idx=ep, times=self.env.times, path_data=path)
+            state = np.asarray(self.env._build_state(self.env.i, self.env.h_prev), dtype=np.float32)
+            self.agent.store_transition(state_init, H0, -float(setup_cost), state, False)
+            step_count += 1
+            setup_loss = self.agent.learn() if (step_count % self.update_frequency == 0) else None
+            er.add_step(
+                action=H0,
+                info={
+                    "spot_t": float(path["S"][0]),
+                    "spot_next": float(path["S"][0]),
+                    "hedge": float(H0),
+                    "trade_cost": float(setup_cost),
+                    "liquidation_cost": 0.0,
+                    "reward": -float(setup_cost),
+                    "cost": float(setup_cost),
+                },
+                loss=setup_loss,
+                agent_info={"is_setup_step": True},
+            )
             done = False
-
-            episode_res = EpisodeResult(split="train", episode_idx=episode, times=self.env.times,
-                                        path_data={key: value[episode] for key, value in self.training_paths.items()})
-            
             while not done:
                 action = self.agent.act(state, eval_mode=False)
-
-                next_state, reward, done, info = self.env.step(action)
-                self.agent.store_transition(state, action, reward, next_state, done)
-                
-                loss = self.agent.learn()
-                state = next_state
-
-                episode_res.add_step(action=action, info=info, loss=loss)
-
-            res.add_episode(episode_res, type="train")
-
+                ns, reward, done, info = self.env.step(action)
+                self.agent.store_transition(state, action, reward, ns, done)
+                step_count += 1
+                loss = self.agent.learn() if (step_count % self.update_frequency == 0) else None
+                er.add_step(action=action, info=info, loss=loss)
+                state = ns
+            res.add_episode(er, type="train")
         return res
-                
 
-    def test(self) -> list[float]:
-        """
-        Evaluate the trained agent on new simulated data.
-
-        Returns
-        -------
-        list[float]
-            A list containing the costs obtained by the agent on the evaluation episodes.
-        """
-        logger.info("Starting evaluation...")
-
+    def test(self):
+        self._ensure_eval_paths()
         self.agent.set_eval_mode()
-
         res = HedgingResult()
-        for episode in range(self.eval_episodes):
-            logger.info(f"\tAgent evaluation episode {episode + 1}/{self.eval_episodes}...")
-            
-            path_data = self.eval_paths["S"][episode]
-            state = self.env.setup_env(path_data=path_data)
+        for ep in range(self.eval_episodes):
+            path = self._ep_path(self.eval_paths, ep)
+            state = self.env.setup_env(path)
+            H0 = self.agent.act(state, eval_mode=True)
+            self.env.set_initial_hedge(H0)
+            setup_cost = self.env.transac_cost * abs(float(path["S"][0]) * float(H0))
+            er = EpisodeResult(split="eval_agent", episode_idx=ep, times=self.env.times, path_data=path)
+            er.add_step(
+                action=H0,
+                info={
+                    "spot_t": float(path["S"][0]),
+                    "spot_next": float(path["S"][0]),
+                    "hedge": float(H0),
+                    "trade_cost": float(setup_cost),
+                    "liquidation_cost": 0.0,
+                    "reward": -float(setup_cost),
+                    "cost": float(setup_cost),
+                },
+                agent_info={"is_setup_step": True},
+            )
+            state = np.asarray(self.env._build_state(self.env.i, self.env.h_prev), dtype=np.float32)
             done = False
-            
-            episode_res = EpisodeResult(split="eval_agent", episode_idx=episode, times=self.env.times,
-                                        path_data={key: value[episode] for key, value in self.eval_paths.items()})
-            
             while not done:
                 action = self.agent.act(state, eval_mode=True)
                 state, _, done, info = self.env.step(action)
-                episode_res.add_step(action=action, info=info)
-
-            res.add_episode(episode_res, type="eval_agent")
-
+                er.add_step(action=action, info=info)
+            res.add_episode(er, type="eval_agent")
         return res
 
-    def test_benchmark(self) -> HedgingResult:
-        """
-        Evaluate the benchmark strategy on new simulated data.
-
-        Returns
-        -------
-        HedgingResult
-            A HedgingResult object containing the results from the benchmark evaluation.
-        """
-        logger.info("Starting benchmark evaluation...")
-
+    def test_benchmark(self):
+        self._ensure_eval_paths()
+        bench = self.benchmark
         res = HedgingResult()
-        for episode in range(self.eval_episodes):
-            logger.info(f"\tBenchmark evaluation episode {episode + 1}/{self.eval_episodes}...")
-            
-            path_data = self.eval_paths["S"][episode]
-            state = self.env.setup_env(path_data=path_data)
+        for ep in range(self.eval_episodes):
+            path = self._ep_path(self.eval_paths, ep)
+            state = self.env.setup_env(path)
+            H0 = bench(state)
+            self.env.set_initial_hedge(H0)
+            setup_cost = self.env.transac_cost * abs(float(path["S"][0]) * float(H0))
+            er = EpisodeResult(split="eval_benchmark", episode_idx=ep, times=self.env.times, path_data=path)
+            er.add_step(
+                action=H0,
+                info={
+                    "spot_t": float(path["S"][0]),
+                    "spot_next": float(path["S"][0]),
+                    "hedge": float(H0),
+                    "trade_cost": float(setup_cost),
+                    "liquidation_cost": 0.0,
+                    "reward": -float(setup_cost),
+                    "cost": float(setup_cost),
+                },
+                agent_info={"is_setup_step": True},
+            )
+            state = np.asarray(self.env._build_state(self.env.i, self.env.h_prev), dtype=np.float32)
             done = False
-
-            episode_res = EpisodeResult(split="eval_benchmark", episode_idx=episode, times=self.env.times,
-                                        path_data={key: value[episode] for key, value in self.eval_paths.items()})
-            
             while not done:
-                action = self.benchmark(state)
+                action = bench(state)
                 state, _, done, info = self.env.step(action)
-                episode_res.add_step(action=action, info=info)
-            
-            res.add_episode(episode_res, type="eval_benchmark")
-
+                er.add_step(action=action, info=info)
+            res.add_episode(er, type="eval_benchmark")
         return res

@@ -90,7 +90,6 @@ Thumbs.db
 # Local data / artifacts
 data/
 artifacts/
-outputs/
 reports/
 
 # Model / experiment checkpoints

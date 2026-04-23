@@ -6,9 +6,12 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "better-tables>=1.0.2",
+    "cpprb>=11.0.0; python_version < '3.14'",
     "matplotlib>=3.10.8",
+    "notebook>=7.5.5",
     "numpy>=2.4.4",
     "pandas>=3.0.2",
+    "rich>=15.0.0",
     "scipy>=1.17.1",
     "torch>=2.11.0",
 ]
