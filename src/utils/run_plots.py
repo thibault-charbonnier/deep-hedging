@@ -92,20 +92,26 @@ def _bar_with_labels(
     ax.set_title(title)
 
 
-def _stacked_y_bar(
+def _stacked_two_segment_bar(
     ax: plt.Axes,
     title: str,
     *,
-    mean_rl: float, mean_bm: float,
-    std_rl: float, std_bm: float,
-    risk_lambda: float,
+    seg1_label: str, seg1_rl: float, seg1_bm: float, seg1_color: str,
+    seg2_label: str, seg2_rl: float, seg2_bm: float, seg2_color: str,
+    ylabel: str,
+    total_fmt: str = "{:.2f}",
+    usd_scale: float | None = None,
 ) -> None:
-    """Render Y(0) = mean + λ_std·std as a stacked bar."""
-    segments = [
-        ("Mean", mean_rl, mean_bm, "#4A90E2"),
-        (f"λ_std·std  (λ={risk_lambda:g})", risk_lambda * std_rl, risk_lambda * std_bm, "#F5A623"),
-    ]
+    """Render a stacked RL-vs-Benchmark bar with two labelled segments.
 
+    ``total_fmt`` controls how the bar-top total is formatted. If
+    ``usd_scale`` is provided, the raw $ value is appended below the
+    percent total on a second line.
+    """
+    segments = [
+        (seg1_label, seg1_rl, seg1_bm, seg1_color),
+        (seg2_label, seg2_rl, seg2_bm, seg2_color),
+    ]
     x = np.array([0, 1])
     bot = np.zeros(2, dtype=float)
     for label, vrl, vbm, color in segments:
@@ -119,14 +125,62 @@ def _stacked_y_bar(
         bot = bot + vals
 
     for i, total in enumerate(bot):
-        ax.text(x[i], total, f"{total:.2f}", ha="center", va="bottom",
-                fontsize=10, fontweight="bold")
+        if usd_scale is not None and np.isfinite(usd_scale):
+            label = f"{total_fmt.format(total)}\n(${total * usd_scale:.3f})"
+        else:
+            label = total_fmt.format(total)
+        ax.text(x[i], total, label, ha="center", va="bottom",
+                fontsize=9, fontweight="bold")
+
+    # Headroom so the legend doesn't overlap the benchmark bar.
+    ymin, ymax = ax.get_ylim()
+    top = max(bot.max(), ymax)
+    if top > 0:
+        ax.set_ylim(min(0, ymin), top * 1.35)
 
     ax.set_xticks([0, 1], ["RL", "Benchmark"])
-    ax.set_ylabel("Y(0)")
+    ax.set_ylabel(ylabel)
     ax.set_title(title)
     ax.axhline(0, color=COLOR_NEUTRAL, linewidth=0.8)
     ax.legend(loc="upper right", fontsize=8)
+
+
+def _stacked_y_bar(
+    ax: plt.Axes,
+    title: str,
+    *,
+    mean_rl: float, mean_bm: float,
+    std_rl: float, std_bm: float,
+    risk_lambda: float,
+) -> None:
+    """Render Y(0) = mean + λ_std·std as a stacked bar (mean + λ·std segments)."""
+    _stacked_two_segment_bar(
+        ax, title,
+        seg1_label="Mean", seg1_rl=mean_rl, seg1_bm=mean_bm, seg1_color="#4A90E2",
+        seg2_label=f"λ_std·std  (λ={risk_lambda:g})",
+        seg2_rl=risk_lambda * std_rl, seg2_bm=risk_lambda * std_bm, seg2_color="#F5A623",
+        ylabel="Y(0)",
+    )
+
+
+def _stacked_cost_decomposition_bar(
+    ax: plt.Axes,
+    *,
+    hedge_rl: float, hedge_bm: float,
+    trade_rl: float, trade_bm: float,
+    usd_scale: float | None = None,
+) -> None:
+    """Decompose the mean total cost into (hedging residual, transaction cost) — RL vs Benchmark."""
+    _stacked_two_segment_bar(
+        ax,
+        "Mean Cost Decomposition (hedging P&L residual + transaction cost)",
+        seg1_label="Hedging P&L residual",
+        seg1_rl=hedge_rl, seg1_bm=hedge_bm, seg1_color="#4A90E2",
+        seg2_label="Transaction cost",
+        seg2_rl=trade_rl, seg2_bm=trade_bm, seg2_color="#F5A623",
+        ylabel="Mean total cost",
+        usd_scale=usd_scale,
+    )
 
 
 def _plot_training_loss(ax: plt.Axes, train_steps: pd.DataFrame | None) -> None:
@@ -223,12 +277,25 @@ def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
     trade_rl_usd = _mean_trade_cost_usd(rl_episodes)
     trade_bm_usd = _mean_trade_cost_usd(bm_episodes)
 
+    # Decomposition of mean total cost into (hedging P&L residual) + (transaction cost).
+    # hedging residual = total_cost − total_trade_cost; figures are in rescaled
+    # units (×100/option_price_t0), i.e. %-of-option-price.
+    def _mean_hedge_trade(df: pd.DataFrame) -> tuple[float, float]:
+        if df.empty or "total_cost" not in df.columns or "total_trade_cost" not in df.columns:
+            return float("nan"), float("nan")
+        trade = float(df["total_trade_cost"].mean())
+        total = float(df["total_cost"].mean())
+        return total - trade, trade
+
+    mean_hedge_rl, mean_trade_rl = _mean_hedge_trade(rl_episodes)
+    mean_hedge_bm, mean_trade_bm = _mean_hedge_trade(bm_episodes)
+
     y_rl = _get_scalar(rl_summary, "y_objective")
     y_bm = _get_scalar(bm_summary, "y_objective")
     y_title = f"Y(0) = mean + {risk_lambda:g}·std"
     improvement_pct = 100.0 * (y_bm - y_rl) / y_bm if y_bm not in (0.0, np.nan) and np.isfinite(y_bm) and y_bm != 0 else float("nan")
 
-    fig, axes = plt.subplots(5, 2, figsize=(14, 22))
+    fig, axes = plt.subplots(6, 2, figsize=(14, 26))
     axes = np.asarray(axes)
 
     ax = axes[0, 0]
@@ -292,8 +359,27 @@ def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
     ax_tc.set_ylabel("Transaction cost ($ / option)")
     ax_tc.set_title("Avg transaction cost paid per episode ($)")
 
-    _plot_training_loss(axes[4, 0], train_steps if isinstance(train_steps, pd.DataFrame) else None)
-    _plot_training_episode_cost(axes[4, 1], train_episodes if isinstance(train_episodes, pd.DataFrame) else None)
+    # Row 4: mean-cost decomposition (RL vs Benchmark), in % and in $.
+    _stacked_cost_decomposition_bar(
+        axes[4, 0],
+        hedge_rl=mean_hedge_rl, hedge_bm=mean_hedge_bm,
+        trade_rl=mean_trade_rl, trade_bm=mean_trade_bm,
+    )
+    if usd_scale is not None and np.isfinite(usd_scale):
+        _stacked_cost_decomposition_bar(
+            axes[4, 1],
+            hedge_rl=mean_hedge_rl * usd_scale,
+            hedge_bm=mean_hedge_bm * usd_scale,
+            trade_rl=mean_trade_rl * usd_scale,
+            trade_bm=mean_trade_bm * usd_scale,
+        )
+        axes[4, 1].set_ylabel("Mean total cost ($ / option)")
+        axes[4, 1].set_title("Mean Cost Decomposition ($)")
+    else:
+        axes[4, 1].set_axis_off()
+
+    _plot_training_loss(axes[5, 0], train_steps if isinstance(train_steps, pd.DataFrame) else None)
+    _plot_training_episode_cost(axes[5, 1], train_episodes if isinstance(train_episodes, pd.DataFrame) else None)
 
     fig.suptitle(f"Hedging Run — {run_id}", fontsize=14, fontweight="bold", y=0.995)
     opt_str = f"Opt(t=0)=${option_price_t0:.3f}" if np.isfinite(option_price_t0) else ""
