@@ -51,6 +51,21 @@ class CriticMLP(nn.Module):
         return self.net(torch.cat([state, action], dim=-1))
 
 
+class QuantileCriticMLP(nn.Module):
+    """Critic that predicts N quantiles of the return distribution (QR-DQN style)."""
+
+    def __init__(self, state_dim: int, action_dim: int, n_quantiles: int,
+                 hidden_dims: Iterable[int] = (128, 128)) -> None:
+        super().__init__()
+        self.n_quantiles = int(n_quantiles)
+        self.net = MLP(state_dim + action_dim, self.n_quantiles, hidden_dims)
+
+    def forward(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+        if action.ndim == 1:
+            action = action.unsqueeze(-1)
+        return self.net(torch.cat([state, action], dim=-1))  # [B, N]
+
+
 
 # ── Target network updates ──────────────────────────────────────────
 

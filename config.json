@@ -35,7 +35,7 @@
     },
     "training_schedule":
     {
-        "train_episodes": 20000,
+        "train_episodes": 10000,
         "eval_episodes": 5000,
         "update_frequency": 5
     },
@@ -55,6 +55,9 @@
         "skew_lambda": 1.5,
         "skew_eps": 1e-8,
         "skew_penalty": "positive",
+        "n_quantiles": 51,
+        "cvar_alpha": 0.95,
+        "huber_kappa": 1.0,
         "action_low": 0.0,
         "action_high": 1.0
     },
@@ -68,8 +71,8 @@
     {
         "maturity": 0.25,
         "rebalancing": 1,
-        "process": "SVJ",
-        "agent": "SkewDDPG",
+        "process": "GBM",
+        "agent": "QRDDPG",
         "benchmark": "BsDelta",
         "seed": 42
     }

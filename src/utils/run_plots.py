@@ -8,6 +8,23 @@ import numpy as np
 import pandas as pd
 
 from ..hedging_result import _nanskewness
+from ..valuation.bs_valuation import BSValuation
+
+
+def _option_price_t0(cfg: dict) -> float:
+    """BS price of the option at t=0 from cfg (matches main.py._option_price_t0)."""
+    maturity = float(cfg["simulation"]["maturity"])
+    spot = float(cfg["simulation"]["S0"])
+    sigma = float(cfg["simulation"]["gbm"]["sigma"])
+    engine = BSValuation(
+        strike=cfg["derivative"]["strike"],
+        maturity=maturity,
+        rate=cfg["derivative"].get("rf_rate", 0.0),
+        dividend=cfg["derivative"].get("div_rate", 0.0),
+        option_type=cfg.get("derivative", {}).get("option_type", "call"),
+    )
+    p, _ = engine.price_and_delta(spot=spot, t=0.0, sigma=sigma)
+    return abs(float(p))
 
 
 def _cbrt_m3_proxy(values: list[float] | np.ndarray, eps: float = 1e-8) -> float:
@@ -83,9 +100,19 @@ def _get_scalar(df: pd.DataFrame | None, column: str) -> float:
     return float(df.iloc[0][column])
 
 
-def _bar_with_labels(ax: plt.Axes, values: list[float], title: str, ylabel: str) -> None:
+def _bar_with_labels(
+    ax: plt.Axes,
+    values: list[float],
+    title: str,
+    ylabel: str,
+    usd_scale: float | None = None,
+) -> None:
     bars = ax.bar([0, 1], values, width=0.5, color=[COLOR_RL, COLOR_BM], edgecolor="white")
-    ax.bar_label(bars, fmt="%.2f", padding=3, fontsize=9)
+    if usd_scale is not None and np.isfinite(usd_scale):
+        labels = [f"{v:.2f}%\n(${v * usd_scale:.3f})" for v in values]
+    else:
+        labels = [f"{v:.2f}" for v in values]
+    ax.bar_label(bars, labels=labels, padding=3, fontsize=9)
     ax.set_xticks([0, 1], ["RL", "Benchmark"])
     ax.set_ylabel(ylabel)
     ax.set_title(title)
@@ -102,6 +129,7 @@ def _stacked_y_bar(
     skew_lambda: float,
     skew_penalty: str,
     include_skew: bool,
+    usd_scale: float | None = None,
 ) -> None:
     """Render Y(0) as a stacked bar showing mean / λ_std·std / λ_skew·penalty(skew_proxy)."""
     segments = [
@@ -127,7 +155,11 @@ def _stacked_y_bar(
         bot = bot + vals
 
     for i, total in enumerate(bot):
-        ax.text(x[i], total, f"{total:.2f}", ha="center", va="bottom",
+        if usd_scale is not None and np.isfinite(usd_scale):
+            label = f"{total:.2f}%\n(${total * usd_scale:.3f})"
+        else:
+            label = f"{total:.2f}"
+        ax.text(x[i], total, label, ha="center", va="bottom",
                 fontsize=10, fontweight="bold")
 
     ax.set_xticks([0, 1], ["RL", "Benchmark"])
@@ -218,6 +250,27 @@ def plot_run(
     skew_lambda = float(cfg.get("hedging_agent", {}).get("skew_lambda", 0.0))
     skew_penalty = str(cfg.get("hedging_agent", {}).get("skew_penalty", "positive")).lower()
 
+    # All *_total_cost columns in the CSVs are rescaled ×100/option_price_t0,
+    # so multiplying a plotted value by (option_price_t0 / 100) gives back
+    # the raw currency amount (in units of S).
+    try:
+        option_price_t0 = _option_price_t0(cfg)
+        usd_scale = option_price_t0 / 100.0
+    except Exception:
+        option_price_t0 = float("nan")
+        usd_scale = None
+
+    # Real transaction cost in $ (mean over episodes).  `total_trade_cost`
+    # is the per-episode sum of all κ·|S·ΔH| fees INCLUDING setup and
+    # terminal liquidation — it's what the strategy actually pays out.
+    def _mean_trade_cost_usd(df: pd.DataFrame) -> float:
+        if df.empty or "total_trade_cost" not in df.columns or usd_scale is None:
+            return float("nan")
+        return float(df["total_trade_cost"].mean() * usd_scale)
+
+    trade_rl_usd = _mean_trade_cost_usd(rl_episodes)
+    trade_bm_usd = _mean_trade_cost_usd(bm_episodes)
+
     # Apply the SAME penalty function the actor uses on skew_proxy, so the
     # stacked Y(0) bar matches what the agent actually optimises.
     def _penalty(x: float) -> float:
@@ -299,18 +352,28 @@ def plot_run(
         f"{skew_penalty}(skew_proxy)",
     )
     axes[3, 0].axhline(0, color=COLOR_NEUTRAL, linewidth=0.8)
-    axes[3, 1].set_axis_off()
+
+    # Real transaction cost per episode, in $ (setup + per-step rebal + terminal liquidation).
+    ax_tc = axes[3, 1]
+    bars = ax_tc.bar([0, 1], [trade_rl_usd, trade_bm_usd], width=0.5,
+                     color=[COLOR_RL, COLOR_BM], edgecolor="white")
+    ax_tc.bar_label(bars, labels=[f"${v:.4f}" for v in (trade_rl_usd, trade_bm_usd)],
+                    padding=3, fontsize=9)
+    ax_tc.set_xticks([0, 1], ["RL", "Benchmark"])
+    ax_tc.set_ylabel("Transaction cost ($ / option)")
+    ax_tc.set_title("Avg transaction cost paid per episode ($)")
 
     _plot_training_loss(axes[4, 0], train_steps if isinstance(train_steps, pd.DataFrame) else None)
     _plot_training_episode_cost(axes[4, 1], train_episodes if isinstance(train_episodes, pd.DataFrame) else None)
 
     fig.suptitle(f"Hedging Run — {run_id}", fontsize=14, fontweight="bold", y=0.995)
+    opt_str = f"Opt(t=0)=${option_price_t0:.3f}" if np.isfinite(option_price_t0) else ""
     fig.text(
         0.5,
         0.975,
         f"Process={cfg['run']['process']} | Agent={cfg['run']['agent']} | Benchmark={cfg['run']['benchmark']} | "
         f"κ={cfg['hedging_env']['transaction_cost']:.1%} | T={cfg['simulation']['maturity']:.4f}y | "
-        f"Y improvement={improvement_pct:+.2f}%",
+        f"{opt_str} | Y improvement={improvement_pct:+.2f}%",
         ha="center",
         fontsize=10,
         alpha=0.7,

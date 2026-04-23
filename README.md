@@ -86,7 +86,8 @@ deep-hedging/
 │   │   └── bartlett_delta.py            # Bartlett delta (pour SABR)
 │   ├── hedging_agents/
 │   │   ├── ddpg_agent.py         # DDPG avec critiques Q1/Q2 (mean-std)
-│   │   └── skew_ddpg_agent.py    # DDPG étendu avec Q3 (mean-std-skew)
+│   │   ├── skew_ddpg_agent.py    # DDPG étendu avec Q3 (mean-std-skew)
+│   │   └── qr_ddpg_agent.py      # DDPG distributionnel (quantile regression + CVaR)
 │   ├── persistence/
 │   │   └── run_store.py          # Écriture des artefacts dans outputs/
 │   ├── utils/
@@ -211,6 +212,10 @@ C'est le **seul** endroit où paramétrer un run.
   - **`skew_lambda`** : poids de la pénalité d'asymétrie dans l'actor. Appliquée au proxy de skewness `s_proxy = sign(m₃)·(|m₃|+ε)^(1/3)` qui vit sur la même échelle que `std` — `skew_lambda = 0.1` est un bon point de départ, ajuster à mesure des runs.
   - **`skew_penalty`** : `"positive"` (pénalise la queue droite via ReLU, **défaut recommandé**), `"absolute"` (pénalise toute asymétrie), `"signed"` (bénéfice si skew négatif).
   - **`skew_eps`** : régularisation numérique dans le cube root signé et le clamp de variance.
+- **Paramètres QR-DDPG (`QRDDPG`)** :
+  - **`n_quantiles`** : nombre de quantiles τᵢ = (i − 0.5)/N approximant la distribution du coût. 51 par défaut (standard QR-DQN), plus = distribution plus fine mais plus coûteux.
+  - **`cvar_alpha`** : niveau du CVaR minimisé par l'actor (ex. 0.95 = moyenne des 5% pires cas). L'actor est indépendant de `risk_lambda`/`skew_lambda` — CVaR unique objectif.
+  - **`huber_kappa`** : seuil du Huber loss pour la quantile regression (robuste aux outliers, défaut 1.0).
 - **`action_low` / `action_high`** : bornes de la holding `H`. `[0, 1]` pour une short call couverte par un long sur le sous-jacent (0 ≤ H ≤ 1).
 
 ### `derivative` — paramètres de l'option
@@ -241,7 +246,7 @@ C'est le **seul** endroit où paramétrer un run.
 
 - **`maturity`** : dupliqué avec `simulation.maturity` (main.py écrase `simulation.maturity` par la valeur de `run.maturity` pour simplifier les scripts).
 - **`process`** : `"GBM"` | `"SABR"` | `"SVJ"`.
-- **`agent`** : `"DeepDPG"` | `"SkewDDPG"`.
+- **`agent`** : `"DeepDPG"` | `"SkewDDPG"` | `"QRDDPG"`.
 - **`benchmark`** : `"BsDelta"` | `"BartlettDelta"` | `"SABRPractitionerDelta"`.
 
 - **`rebalancing`** : espacement entre rebalancements (jours de bourse). `n_steps = round(maturity · 252 / rebalancing)`. Ex. `maturity=0.25, rebalancing=1` → 63 pas.
@@ -337,6 +342,15 @@ avec coût initial `−κ·|S_0·H_0|` et coût final `−κ·|S_n·H_n|` (= 0 c
 - La transition terminale isolée `(s_{n−1}, a=0, r_liq, s_n, True)` n'entre **jamais** dans le replay buffer.
 
 **Pourquoi :** sans ce schéma, le critique ne voyait `Q(s_{n−1}, a)` que pour `a = 0`, et son extrapolation hors-distribution était utilisée dans le bootstrap target à `i = n−2`, causant une divergence classique par *extrapolation error* (Fujimoto et al.).
+
+### Agent QR-DDPG (distributionnel)
+
+Au lieu de prédire un scalaire `E[C]` (ou des moments séparés comme SkewDDPG), le critique prédit la **distribution** du coût via N quantiles `θᵢ(s, a) ≈ F⁻¹_{C|s,a}(τᵢ)` avec `τᵢ = (i − 0.5)/N`.
+
+- **Critic loss** : quantile Huber regression (Dabney et al. 2018, QR-DQN).
+- **Actor loss** : minimise le **CVaR_α** de la distribution prédite — moyenne des quantiles au-delà du niveau α (`α=0.95` → moyenne des 5% pires coûts).
+- **Avantages** vs SkewDDPG : un seul critique (moins de surface à tuner), CVaR directement interprétable en finance, pas de `loss_c3` en unités `cost⁶`, moments d'ordre arbitraire dérivables de la distribution (stat skew = post-process gratuit).
+- **Hyperparams-clés** : `n_quantiles` (51 défaut), `cvar_alpha` (0.95), `huber_kappa` (1.0).
 
 ### Agent SkewDDPG
 
