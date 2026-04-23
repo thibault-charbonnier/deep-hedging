@@ -1,5 +1,8 @@
 from __future__ import annotations
+import hashlib
+import json
 import logging
+from pathlib import Path
 import numpy as np
 from .hedging_strategy.hedging_env import HedgingEnv
 from .hedging_result import HedgingResult, EpisodeResult
@@ -7,9 +10,29 @@ from .hedging_result import HedgingResult, EpisodeResult
 logger = logging.getLogger(__name__)
 
 
+def _paths_cache_key(process_name: str, sim_cfg: dict, n_paths: int, seed) -> str:
+    """Deterministic key from (process, sim params, n_paths, seed)."""
+    relevant = {"process": process_name, "sim": sim_cfg, "n_paths": int(n_paths), "seed": seed}
+    blob = json.dumps(relevant, sort_keys=True).encode("utf-8")
+    return hashlib.sha1(blob).hexdigest()[:16]
+
+
+def _load_paths_npz(path: Path) -> dict[str, np.ndarray] | None:
+    if not path.exists():
+        return None
+    with np.load(path) as data:
+        return {k: data[k].copy() for k in data.files}
+
+
+def _save_paths_npz(path: Path, paths: dict[str, np.ndarray]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(path, **paths)
+
+
 class Orchestrator:
     def __init__(self, config, process_type, agent_type, benchmark_type):
         self.config = config
+        self.process_name = process_type.name
         self.env = HedgingEnv(config)
         self.process = process_type.value(config["simulation"])
         self.agent = agent_type.value(config["hedging_agent"])
@@ -20,18 +43,54 @@ class Orchestrator:
         self.training_paths = None
         self.eval_paths = None
 
+        # Optional path cache (opt-in via run.paths_cache_dir).
+        # If set, paths are loaded from / saved to <cache_dir>/<hash>_{train,eval}.npz
+        # so multiple runs sharing the same (process, sim config, seed, n_paths)
+        # hit the exact same paths without re-simulating.
+        cache_dir = config.get("run", {}).get("paths_cache_dir")
+        self._cache_dir = Path(cache_dir) if cache_dir else None
+        self._seed = config.get("run", {}).get("seed")
+
     def _ep_path(self, paths, ep):
         return {k: v[ep] for k, v in paths.items()}
 
+    def _cache_path(self, kind: str, n_paths: int) -> Path | None:
+        if self._cache_dir is None:
+            return None
+        key = _paths_cache_key(self.process_name, self.config["simulation"], n_paths, self._seed)
+        return self._cache_dir / f"{key}_{kind}.npz"
+
     def _ensure_training_paths(self):
-        if self.training_paths is None:
-            logger.info("Simulating training paths...")
-            self.training_paths = self.process.simulate_paths(self.train_episodes)
+        if self.training_paths is not None:
+            return
+        cache_path = self._cache_path("train", self.train_episodes)
+        if cache_path is not None:
+            loaded = _load_paths_npz(cache_path)
+            if loaded is not None:
+                logger.info("Loaded cached training paths from %s", cache_path)
+                self.training_paths = loaded
+                return
+        logger.info("Simulating training paths...")
+        self.training_paths = self.process.simulate_paths(self.train_episodes)
+        if cache_path is not None:
+            _save_paths_npz(cache_path, self.training_paths)
+            logger.info("Cached training paths to %s", cache_path)
 
     def _ensure_eval_paths(self):
-        if self.eval_paths is None:
-            logger.info("Simulating evaluation paths...")
-            self.eval_paths = self.process.simulate_paths(self.eval_episodes)
+        if self.eval_paths is not None:
+            return
+        cache_path = self._cache_path("eval", self.eval_episodes)
+        if cache_path is not None:
+            loaded = _load_paths_npz(cache_path)
+            if loaded is not None:
+                logger.info("Loaded cached evaluation paths from %s", cache_path)
+                self.eval_paths = loaded
+                return
+        logger.info("Simulating evaluation paths...")
+        self.eval_paths = self.process.simulate_paths(self.eval_episodes)
+        if cache_path is not None:
+            _save_paths_npz(cache_path, self.eval_paths)
+            logger.info("Cached evaluation paths to %s", cache_path)
 
     def train(self):
         self._ensure_training_paths()
