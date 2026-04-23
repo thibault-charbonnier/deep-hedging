@@ -149,8 +149,8 @@ def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
         float(max(bm_steps["action"].max(), rl_steps["action"].max())),
     ]
     ax.plot(lims, lims, linestyle="--", color=COLOR_NEUTRAL, linewidth=1.0)
-    ax.text(0.05, 0.95, "Under-hedge", transform=ax.transAxes, ha="left", va="top", fontsize=9, color=COLOR_NEUTRAL, alpha=0.8)
-    ax.text(0.95, 0.05, "Over-hedge", transform=ax.transAxes, ha="right", va="bottom", fontsize=9, color=COLOR_NEUTRAL, alpha=0.8)
+    ax.text(0.05, 0.95, "Over-hedge", transform=ax.transAxes, ha="left", va="top", fontsize=9, color=COLOR_NEUTRAL,alpha=0.8)
+    ax.text(0.95, 0.05, "Under-hedge", transform=ax.transAxes, ha="right", va="bottom", fontsize=9, color=COLOR_NEUTRAL,alpha=0.8)
     ax.set_aspect("equal", adjustable="box")
     ax.set_xlabel("Benchmark holding")
     ax.set_ylabel("RL holding")
