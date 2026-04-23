@@ -7,42 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from ..hedging_result import _nanskewness
-from ..valuation.bs_valuation import BSValuation
-
-
-def _option_price_t0(cfg: dict) -> float:
-    """BS price of the option at t=0 from cfg (matches main.py._option_price_t0)."""
-    maturity = float(cfg["simulation"]["maturity"])
-    spot = float(cfg["simulation"]["S0"])
-    sigma = float(cfg["simulation"]["gbm"]["sigma"])
-    engine = BSValuation(
-        strike=cfg["derivative"]["strike"],
-        maturity=maturity,
-        rate=cfg["derivative"].get("rf_rate", 0.0),
-        dividend=cfg["derivative"].get("div_rate", 0.0),
-        option_type=cfg.get("derivative", {}).get("option_type", "call"),
-    )
-    p, _ = engine.price_and_delta(spot=spot, t=0.0, sigma=sigma)
-    return abs(float(p))
-
-
-def _cvar(values: list[float] | np.ndarray, alpha: float = 0.95) -> float:
-    """Empirical CVaR at level α: mean of the observations ≥ quantile_α.
-
-    For cost distributions (where higher = worse), this is the average
-    of the worst (1-α) fraction of episodes — exactly what QRDDPG
-    minimises at training time.
-    """
-    arr = np.asarray(list(values), dtype=float)
-    finite = arr[np.isfinite(arr)]
-    if finite.size == 0:
-        return float("nan")
-    threshold = float(np.quantile(finite, alpha))
-    tail = finite[finite >= threshold]
-    if tail.size == 0:
-        return float("nan")
-    return float(tail.mean())
+from ..valuation.bs_valuation import option_price_t0 as _compute_option_price_t0
+from .helpers import cvar, nanskewness
 
 
 plt.rcParams.update(
@@ -223,16 +189,16 @@ def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
     std_rl = _get_scalar(rl_summary, "std_total_cost")
     std_bm = _get_scalar(bm_summary, "std_total_cost")
 
-    skew_rl = _nanskewness(rl_episodes["total_cost"].tolist()) if not rl_episodes.empty and "total_cost" in rl_episodes.columns else float("nan")
-    skew_bm = _nanskewness(bm_episodes["total_cost"].tolist()) if not bm_episodes.empty and "total_cost" in bm_episodes.columns else float("nan")
+    skew_rl = nanskewness(rl_episodes["total_cost"].tolist()) if not rl_episodes.empty and "total_cost" in rl_episodes.columns else float("nan")
+    skew_bm = nanskewness(bm_episodes["total_cost"].tolist()) if not bm_episodes.empty and "total_cost" in bm_episodes.columns else float("nan")
 
     # CVaR at the same α the QRDDPG actor optimises.  Defaults to 0.95
     # when the config doesn't specify one (DeepDPG runs, etc.).
     cvar_alpha = float(cfg.get("hedging_agent", {}).get("cvar_alpha", 0.95))
     rl_costs_list = rl_episodes["total_cost"].tolist() if not rl_episodes.empty and "total_cost" in rl_episodes.columns else []
     bm_costs_list = bm_episodes["total_cost"].tolist() if not bm_episodes.empty and "total_cost" in bm_episodes.columns else []
-    cvar_rl = _cvar(rl_costs_list, cvar_alpha)
-    cvar_bm = _cvar(bm_costs_list, cvar_alpha)
+    cvar_rl = cvar(rl_costs_list, cvar_alpha)
+    cvar_bm = cvar(bm_costs_list, cvar_alpha)
 
     risk_lambda = float(cfg.get("hedging_agent", {}).get("risk_lambda", 1.5))
 
@@ -240,7 +206,7 @@ def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
     # so multiplying a plotted value by (option_price_t0 / 100) gives back
     # the raw currency amount (in units of S).
     try:
-        option_price_t0 = _option_price_t0(cfg)
+        option_price_t0 = _compute_option_price_t0(cfg)
         usd_scale = option_price_t0 / 100.0
     except Exception:
         option_price_t0 = float("nan")

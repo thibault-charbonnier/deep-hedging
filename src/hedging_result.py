@@ -6,39 +6,15 @@ from typing import Any, Literal
 import numpy as np
 import pandas as pd
 
+from .utils.helpers import nanskewness
+
 SplitType = Literal["train", "eval_agent", "eval_benchmark"]
 ALL_SPLITS: tuple[SplitType, SplitType, SplitType] = ("train", "eval_agent", "eval_benchmark")
 
 
-def _nanmean(values: list[float]) -> float:
-    """Mean of a list ignoring NaNs; returns NaN if the list is empty."""
-    return float(np.nanmean(values)) if values else np.nan
-
-
-def _nanstd(values: list[float]) -> float:
-    """Population std (ddof=0) of a list ignoring NaNs; NaN if empty."""
-    return float(np.nanstd(values)) if values else np.nan
-
-
-def _nansum(values: list[float]) -> float:
-    """Sum of a list ignoring NaNs; returns NaN if the list is empty."""
-    return float(np.nansum(values)) if values else np.nan
-
-
-def _nanskewness(values: list[float]) -> float:
-    """Calculate skewness (3rd moment / std^3), handling NaN values."""
-    if not values:
-        return np.nan
-    arr = np.asarray(values, dtype=float)
-    finite_vals = arr[np.isfinite(arr)]
-    if len(finite_vals) < 3:
-        return np.nan
-    mean = float(np.mean(finite_vals))
-    std = float(np.std(finite_vals, ddof=0))
-    if std == 0:
-        return np.nan
-    skew = float(np.mean(((finite_vals - mean) / std) ** 3))
-    return skew
+def _safe(op, values) -> float:
+    """Apply ``op`` (np.nanmean / nanstd / nansum) to ``values``; return NaN if empty."""
+    return float(op(values)) if values else np.nan
 
 
 @dataclass
@@ -75,23 +51,23 @@ class EpisodeResult:
         self.agent_infos.append({} if agent_info is None else agent_info)
 
     def step_frame(self) -> pd.DataFrame:
-        """Return a long-format DataFrame with one row per step.
+        """Return a long-format DataFrame with one row per recorded step.
 
-        Columns include split/episode identifiers, current and next
-        values of time/spot/sigma/variance (when available), action,
-        reward, costs (total/trade/liquidation), and loss.
+        The first row is the setup step: its ``*`` and ``*_next`` values
+        are both taken at t=0 (no transition yet). For i >= 1, row i
+        pairs values at index ``i-1`` (current) with index ``i`` (next).
+        Extra path fields (``sigma``, ``variance``) are included when
+        present.
         """
         n_steps = len(self.actions)
-        if n_steps == len(self.times):
-            time = np.concatenate(([self.times[0]], self.times[:-1]))
-            time_next = np.concatenate(([self.times[0]], self.times[1:]))
-            spot = np.concatenate(([self.path_data["S"][0]], self.path_data["S"][:-1]))
-            spot_next = np.concatenate(([self.path_data["S"][0]], self.path_data["S"][1:]))
-        else:
-            time = self.times[:n_steps]
-            time_next = self.times[1 : n_steps + 1]
-            spot = self.path_data["S"][:n_steps]
-            spot_next = self.path_data["S"][1 : n_steps + 1]
+
+        def _pair(series: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+            first = series[0]
+            return (np.concatenate(([first], series[:-1])),
+                    np.concatenate(([first], series[1:])))
+
+        time, time_next = _pair(self.times)
+        spot, spot_next = _pair(self.path_data["S"])
         data: dict[str, Any] = {
             "split": [self.split] * n_steps,
             "episode_idx": [self.episode_idx] * n_steps,
@@ -109,12 +85,9 @@ class EpisodeResult:
         }
         for extra_key in ("sigma", "variance"):
             if extra_key in self.path_data:
-                if n_steps == len(self.times):
-                    data[extra_key] = np.concatenate(([self.path_data[extra_key][0]], self.path_data[extra_key][:-1]))
-                    data[f"{extra_key}_next"] = np.concatenate(([self.path_data[extra_key][0]], self.path_data[extra_key][1:]))
-                else:
-                    data[extra_key] = self.path_data[extra_key][:n_steps]
-                    data[f"{extra_key}_next"] = self.path_data[extra_key][1 : n_steps + 1]
+                cur, nxt = _pair(self.path_data[extra_key])
+                data[extra_key] = cur
+                data[f"{extra_key}_next"] = nxt
         return pd.DataFrame(data)
 
 
@@ -150,7 +123,7 @@ class HedgingResult:
                 costs = ep.costs
                 trade_costs = ep.trade_costs
                 liquidation_costs = ep.liquidation_costs
-                total_cost = _nansum(costs)
+                total_cost = _safe(np.nansum, costs)
                 loss_values = (
                     np.asarray([np.nan if x is None else float(x) for x in ep.losses], dtype=float)
                     if ep.losses
@@ -163,10 +136,10 @@ class HedgingResult:
                         "episode_idx": ep.episode_idx,
                         "n_steps": len(ep.actions),
                         "total_cost": total_cost,
-                        "mean_step_cost": _nanmean(costs),
-                        "std_step_cost": _nanstd(costs),
-                        "total_trade_cost": _nansum(trade_costs),
-                        "total_liquidation_cost": _nansum(liquidation_costs),
+                        "mean_step_cost": _safe(np.nanmean, costs),
+                        "std_step_cost": _safe(np.nanstd, costs),
+                        "total_trade_cost": _safe(np.nansum, trade_costs),
+                        "total_liquidation_cost": _safe(np.nansum, liquidation_costs),
                         "mean_loss": float(finite_losses.mean()) if finite_losses.size > 0 else np.nan,
                     }
                 )
@@ -186,7 +159,7 @@ class HedgingResult:
         for split_name, g in ep.groupby("split", sort=False):
             mean_cost = float(g["total_cost"].mean())
             std_cost = float(g["total_cost"].std(ddof=0))
-            skew_cost = float(_nanskewness(g["total_cost"].tolist()))
+            skew_cost = float(nanskewness(g["total_cost"].tolist()))
             rows.append(
                 {
                     "split": split_name,

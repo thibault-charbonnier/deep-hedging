@@ -6,7 +6,7 @@ from src.orchestrator import Orchestrator
 from src.utils.enums import AgentType, ProcessType, BenchmarkType
 from src.persistence import RunStore
 from src.persistence.run_store import RunContext
-from src.valuation.bs_valuation import BSValuation
+from src.valuation.bs_valuation import option_price_t0
 
 
 logging.basicConfig(
@@ -21,31 +21,6 @@ logger.info("--- Start ---")
 
 
 TRADING_DAYS_PER_YEAR = 252
-
-
-def _calculate_n_steps(maturity: float, rebalancing: int) -> int:
-    """Calculate number of steps from maturity and rebalancing frequency (days)."""
-    return max(1, int(round(maturity * TRADING_DAYS_PER_YEAR / rebalancing)))
-
-
-def _option_price_t0(config: dict) -> float:
-    """Return the absolute Black-Scholes price of the option at t=0.
-
-    Uses the GBM sigma from the config as the pricing volatility. The
-    returned value is used as a normalisation scale for reported costs.
-    """
-    maturity = float(config["simulation"]["maturity"])
-    spot = float(config["simulation"]["S0"])
-    sigma = float(config["simulation"]["gbm"]["sigma"])
-    engine = BSValuation(
-        strike=config["derivative"]["strike"],
-        maturity=maturity,
-        rate=config["derivative"].get("rf_rate", 0.0),
-        dividend=config["derivative"].get("div_rate", 0.0),
-        option_type=config.get("derivative", {}).get("option_type", "call"),
-    )
-    p, _ = engine.price_and_delta(spot=spot, t=0.0, sigma=sigma)
-    return abs(float(p))
 
 
 def _run_pipeline(config: dict) -> tuple[RunStore, RunContext]:
@@ -74,7 +49,7 @@ def _run_pipeline(config: dict) -> tuple[RunStore, RunContext]:
     seed = run_cfg.get("seed")
     extra_meta = {"seed": seed} if seed is not None else None
     ctx = store.start_run(script=run_tag, config=config, extra_meta=extra_meta)
-    option_price_t0 = _option_price_t0(config)
+    option_price_t0_value = option_price_t0(config)
     ok = False
     try:
         risk_lambda = float(config["hedging_agent"]["risk_lambda"])
@@ -90,7 +65,7 @@ def _run_pipeline(config: dict) -> tuple[RunStore, RunContext]:
                 result=result,
                 label=label,
                 risk_lambda=risk_lambda,
-                option_price_t0=option_price_t0,
+                option_price_t0=option_price_t0_value,
             )
 
         ok = True
@@ -119,7 +94,7 @@ def main() -> None:
     config["simulation"]["maturity"] = maturity_years
 
     rebalancing = int(run_cfg.get("rebalancing", 1))
-    n_steps = _calculate_n_steps(maturity_years, rebalancing)
+    n_steps = max(1, int(round(maturity_years * TRADING_DAYS_PER_YEAR / rebalancing)))
     config["simulation"]["n_steps"] = n_steps
 
     logger.info(

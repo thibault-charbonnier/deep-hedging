@@ -178,18 +178,21 @@ class Orchestrator:
             res.add_episode(er, type="train")
         return res
 
-    def test(self):
-        """Evaluate the trained agent over ``eval_episodes`` paths (no learning, no exploration)."""
+    def _run_eval_episodes(self, policy_fn, split: str) -> HedgingResult:
+        """Run ``eval_episodes`` episodes with ``policy_fn(state) -> action``, no learning.
+
+        Used for both the trained-agent evaluation and the analytical
+        benchmark evaluation — they differ only in the policy.
+        """
         self._ensure_eval_paths()
-        self.agent.set_eval_mode()
         res = HedgingResult()
         for ep in range(self.eval_episodes):
             path = self._ep_path(self.eval_paths, ep)
             state = self.env.setup_env(path)
-            H0 = self.agent.act(state, eval_mode=True)
+            H0 = policy_fn(state)
             self.env.set_initial_hedge(H0)
             setup_cost = self.env.transac_cost * abs(float(path["S"][0]) * float(H0))
-            er = EpisodeResult(split="eval_agent", episode_idx=ep, times=self.env.times, path_data=path)
+            er = EpisodeResult(split=split, episode_idx=ep, times=self.env.times, path_data=path)
             er.add_step(
                 action=H0,
                 info={
@@ -206,46 +209,25 @@ class Orchestrator:
             state = np.asarray(self.env._build_state(self.env.i, self.env.h_prev), dtype=np.float32)
             done = False
             while not done:
-                # Same convention as train(): no policy call at terminal.
+                # No policy call at terminal: env forces liquidation at T.
                 is_terminal = (self.env.i == self.env.n_steps - 1)
-                action = 0.0 if is_terminal else self.agent.act(state, eval_mode=True)
+                action = 0.0 if is_terminal else policy_fn(state)
                 state, _, done, info = self.env.step(action)
                 er.add_step(action=action, info=info)
-            res.add_episode(er, type="eval_agent")
+            res.add_episode(er, type=split)
         return res
 
-    def test_benchmark(self, benchmark_override=None):
+    def test(self):
+        """Evaluate the trained agent over ``eval_episodes`` paths (no learning, no exploration)."""
+        self.agent.set_eval_mode()
+        return self._run_eval_episodes(
+            policy_fn=lambda s: self.agent.act(s, eval_mode=True),
+            split="eval_agent",
+        )
+
+    def test_benchmark(self):
         """Evaluate the analytical benchmark (BS / Bartlett / SABR practitioner) on the eval paths."""
-        self._ensure_eval_paths()
-        bench = benchmark_override or self.benchmark
-        res = HedgingResult()
-        for ep in range(self.eval_episodes):
-            path = self._ep_path(self.eval_paths, ep)
-            state = self.env.setup_env(path)
-            H0 = bench(state)
-            self.env.set_initial_hedge(H0)
-            setup_cost = self.env.transac_cost * abs(float(path["S"][0]) * float(H0))
-            er = EpisodeResult(split="eval_benchmark", episode_idx=ep, times=self.env.times, path_data=path)
-            er.add_step(
-                action=H0,
-                info={
-                    "spot_t": float(path["S"][0]),
-                    "spot_next": float(path["S"][0]),
-                    "hedge": float(H0),
-                    "trade_cost": float(setup_cost),
-                    "liquidation_cost": 0.0,
-                    "reward": -float(setup_cost),
-                    "cost": float(setup_cost),
-                },
-                agent_info={"is_setup_step": True},
-            )
-            state = np.asarray(self.env._build_state(self.env.i, self.env.h_prev), dtype=np.float32)
-            done = False
-            while not done:
-                # Same convention as train()/test(): force liquidation at T.
-                is_terminal = (self.env.i == self.env.n_steps - 1)
-                action = 0.0 if is_terminal else bench(state)
-                state, _, done, info = self.env.step(action)
-                er.add_step(action=action, info=info)
-            res.add_episode(er, type="eval_benchmark")
-        return res
+        return self._run_eval_episodes(
+            policy_fn=self.benchmark,
+            split="eval_benchmark",
+        )
