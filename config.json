@@ -35,8 +35,8 @@
     },
     "training_schedule":
     {
-        "train_episodes": 30000,
-        "eval_episodes": 5000,
+        "train_episodes": 10000,
+        "eval_episodes": 3000,
         "update_frequency": 5
     },
     "hedging_agent":

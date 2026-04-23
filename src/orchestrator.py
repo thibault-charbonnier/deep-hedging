@@ -64,16 +64,31 @@ class Orchestrator:
                 agent_info={"is_setup_step": True},
             )
             done = False
+            # Buffered-commit: a non-terminal transition is held one iteration
+            # before being stored, so that if the NEXT step is terminal we can
+            # fold the liquidation reward into it and mark done=True — instead
+            # of storing a separate terminal transition (s_{n-1}, a=0, r_liq)
+            # that would leave Q(s_{n-1}, ·) uncalibrated off-zero and poison
+            # the bootstrap target at i=n-2 via target-policy extrapolation.
+            prev_s = prev_a = prev_r = None
             while not done:
-                # At t = T the hedge is contractually liquidated (H_n := 0).
-                # We don't consult the policy at the terminal step and we store
-                # a=0 in the buffer so the critic learns Q(s_term, 0) ≈ r_liq
-                # on the action actually executed — not on a phantom action
-                # that would train the critic to map every action to r_liq.
                 is_terminal = (self.env.i == self.env.n_steps - 1)
                 action = 0.0 if is_terminal else self.agent.act(state, eval_mode=False)
                 ns, reward, done, info = self.env.step(action)
-                self.agent.store_transition(state, action, reward, ns, done)
+                if is_terminal:
+                    if prev_s is not None:
+                        # Fold r_liq into the prior transition (second-to-last
+                        # decision) and terminate there: no bootstrap on s_{n-1}.
+                        self.agent.store_transition(prev_s, prev_a, prev_r + reward, ns, True)
+                    else:
+                        # Degenerate case n_steps == 1: no prior transition
+                        # exists to absorb the liquidation reward.
+                        self.agent.store_transition(state, action, reward, ns, True)
+                    prev_s = prev_a = prev_r = None
+                else:
+                    if prev_s is not None:
+                        self.agent.store_transition(prev_s, prev_a, prev_r, state, False)
+                    prev_s, prev_a, prev_r = state, action, reward
                 step_count += 1
                 loss = self.agent.learn() if (step_count % self.update_frequency == 0) else None
                 er.add_step(action=action, info=info, loss=loss)
