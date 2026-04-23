@@ -15,9 +15,8 @@ y_j = r + γ·(1−done)·θ_j(s', π_target(s'))  — target quantiles.
 
 Actor objective: minimise CVaR_α of the predicted cost distribution
 (= average of the upper tail).  α is the risk level; α=0.95 means we
-average the ~5% worst outcomes.  This replaces the mean−std−skew
-decomposition of SkewDDPG with a single, financially interpretable
-risk metric.
+average the ~5% worst outcomes.  Single, financially interpretable
+risk metric — standard in Basel / Solvency II frameworks.
 
 Keeps ε-greedy exploration and PER from the DDPG baseline so the
 infra stays identical.

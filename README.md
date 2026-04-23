@@ -86,7 +86,6 @@ deep-hedging/
 │   │   └── bartlett_delta.py            # Bartlett delta (pour SABR)
 │   ├── hedging_agents/
 │   │   ├── ddpg_agent.py         # DDPG avec critiques Q1/Q2 (mean-std)
-│   │   ├── skew_ddpg_agent.py    # DDPG étendu avec Q3 (mean-std-skew)
 │   │   └── qr_ddpg_agent.py      # DDPG distributionnel (quantile regression + CVaR)
 │   ├── persistence/
 │   │   └── run_store.py          # Écriture des artefacts dans outputs/
@@ -192,9 +191,9 @@ C'est le **seul** endroit où paramétrer un run.
     "min_buffer_size": 1024,
     "target_update_freq": 100,
     "risk_lambda": 1.5,
-    "skew_lambda": 0.1,
-    "skew_eps": 1e-8,
-    "skew_penalty": "positive",
+    "n_quantiles": 51,
+    "cvar_alpha": 0.95,
+    "huber_kappa": 1.0,
     "action_low": 0.0,
     "action_high": 1.0
 }
@@ -207,14 +206,10 @@ C'est le **seul** endroit où paramétrer un run.
 - **`replay_capacity`** : taille max du buffer. Doit être ≥ `train_episodes × n_steps`. À 200k avec ~21 pas/épisode × 15k épisodes = 315k, on sature un peu → augmenter si besoin, ou garder tel quel (FIFO est acceptable pour ce problème).
 - **`min_buffer_size`** : aucun `learn()` avant que le buffer contienne ≥ N transitions. Évite d'apprendre sur 1–2 samples au début.
 - **`target_update_freq`** : hard copy des réseaux target tous les N updates (convention DQN, pas de soft update ici).
-- **`risk_lambda` (λ_std)** : trade-off mean-std dans la loss de l'actor : `F = E[C] + λ · std(C)`. `1.5` correspond au papier. Plus grand → couverture plus conservative.
-- **Paramètres SkewDDPG (`SkewDeepDPG`)** :
-  - **`skew_lambda`** : poids de la pénalité d'asymétrie dans l'actor. Appliquée au proxy de skewness `s_proxy = sign(m₃)·(|m₃|+ε)^(1/3)` qui vit sur la même échelle que `std` — `skew_lambda = 0.1` est un bon point de départ, ajuster à mesure des runs.
-  - **`skew_penalty`** : `"positive"` (pénalise la queue droite via ReLU, **défaut recommandé**), `"absolute"` (pénalise toute asymétrie), `"signed"` (bénéfice si skew négatif).
-  - **`skew_eps`** : régularisation numérique dans le cube root signé et le clamp de variance.
+- **`risk_lambda` (λ_std)** : trade-off mean-std dans la loss de l'actor (DeepDPG uniquement) : `F = E[C] + λ · std(C)`. `1.5` correspond au papier. Plus grand → couverture plus conservative. Ignoré par QRDDPG qui a son propre objectif (CVaR).
 - **Paramètres QR-DDPG (`QRDDPG`)** :
   - **`n_quantiles`** : nombre de quantiles τᵢ = (i − 0.5)/N approximant la distribution du coût. 51 par défaut (standard QR-DQN), plus = distribution plus fine mais plus coûteux.
-  - **`cvar_alpha`** : niveau du CVaR minimisé par l'actor (ex. 0.95 = moyenne des 5% pires cas). L'actor est indépendant de `risk_lambda`/`skew_lambda` — CVaR unique objectif.
+  - **`cvar_alpha`** : niveau du CVaR minimisé par l'actor (ex. 0.95 = moyenne des 5% pires cas). Unique objectif de l'actor.
   - **`huber_kappa`** : seuil du Huber loss pour la quantile regression (robuste aux outliers, défaut 1.0).
 - **`action_low` / `action_high`** : bornes de la holding `H`. `[0, 1]` pour une short call couverte par un long sur le sous-jacent (0 ≤ H ≤ 1).
 
@@ -246,7 +241,7 @@ C'est le **seul** endroit où paramétrer un run.
 
 - **`maturity`** : dupliqué avec `simulation.maturity` (main.py écrase `simulation.maturity` par la valeur de `run.maturity` pour simplifier les scripts).
 - **`process`** : `"GBM"` | `"SABR"` | `"SVJ"`.
-- **`agent`** : `"DeepDPG"` | `"SkewDDPG"` | `"QRDDPG"`.
+- **`agent`** : `"DeepDPG"` | `"QRDDPG"`.
 - **`benchmark`** : `"BsDelta"` | `"BartlettDelta"` | `"SABRPractitionerDelta"`.
 
 - **`rebalancing`** : espacement entre rebalancements (jours de bourse). `n_steps = round(maturity · 252 / rebalancing)`. Ex. `maturity=0.25, rebalancing=1` → 63 pas.
@@ -345,30 +340,12 @@ avec coût initial `−κ·|S_0·H_0|` et coût final `−κ·|S_n·H_n|` (= 0 c
 
 ### Agent QR-DDPG (distributionnel)
 
-Au lieu de prédire un scalaire `E[C]` (ou des moments séparés comme SkewDDPG), le critique prédit la **distribution** du coût via N quantiles `θᵢ(s, a) ≈ F⁻¹_{C|s,a}(τᵢ)` avec `τᵢ = (i − 0.5)/N`.
+Au lieu de prédire un scalaire `E[C]`, le critique prédit la **distribution** du coût via N quantiles `θᵢ(s, a) ≈ F⁻¹_{C|s,a}(τᵢ)` avec `τᵢ = (i − 0.5)/N`.
 
 - **Critic loss** : quantile Huber regression (Dabney et al. 2018, QR-DQN).
 - **Actor loss** : minimise le **CVaR_α** de la distribution prédite — moyenne des quantiles au-delà du niveau α (`α=0.95` → moyenne des 5% pires coûts).
-- **Avantages** vs SkewDDPG : un seul critique (moins de surface à tuner), CVaR directement interprétable en finance, pas de `loss_c3` en unités `cost⁶`, moments d'ordre arbitraire dérivables de la distribution (stat skew = post-process gratuit).
+- **Avantages** : un seul critique, CVaR directement interprétable en finance (Basel, Solvency II), tous les moments dérivables en post-process (mean, std, skew, VaR…).
 - **Hyperparams-clés** : `n_quantiles` (51 défaut), `cvar_alpha` (0.95), `huber_kappa` (1.0).
-
-### Agent SkewDDPG
-
-Variante qui apprend en plus un critique `Q_3(s,a) ≈ E[C³]` pour contrôler l'asymétrie du coût :
-
-```
-F = E[C] + λ_std · std(C) + λ_skew · penalty(s_proxy)
-```
-
-avec le 3ème moment central `m_3 = Q_3 − 3·Q_1·Q_2 + 2·Q_1³` et le **proxy de skewness par cube root signé** :
-
-```
-s_proxy = sign(m_3) · (|m_3| + ε)^(1/3)
-```
-
-Cette formulation remplace la skewness statistique `m_3 / std³` qui explose numériquement dès que la variance est petite (début d'entraînement, états proches du terminal). Le cube root signé a la **même monotonie** (donc même direction de gradient) mais vit sur la même échelle dimensionnelle que `std` et reste borné — pas de division cubique instable.
-
-Par défaut, `penalty = ReLU(s_proxy)` — pénalise uniquement la queue droite (gros coûts positifs).
 
 ### Benchmarks
 

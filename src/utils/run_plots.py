@@ -27,19 +27,23 @@ def _option_price_t0(cfg: dict) -> float:
     return abs(float(p))
 
 
-def _cbrt_m3_proxy(values: list[float] | np.ndarray, eps: float = 1e-8) -> float:
-    """Signed cube root of the third central moment.
+def _cvar(values: list[float] | np.ndarray, alpha: float = 0.95) -> float:
+    """Empirical CVaR at level α: mean of the observations ≥ quantile_α.
 
-    Matches the actor-loss proxy used in SkewDDPG. Lives on the same
-    scale as `std` (and thus as `mean_total_cost`, `std_total_cost`),
-    not the dimensionless statistical skewness.
+    For cost distributions (where higher = worse), this is the average
+    of the worst (1-α) fraction of episodes — exactly what QRDDPG
+    minimises at training time.
     """
     arr = np.asarray(list(values), dtype=float)
     finite = arr[np.isfinite(arr)]
-    if finite.size < 3:
+    if finite.size == 0:
         return float("nan")
-    m3 = float(np.mean((finite - finite.mean()) ** 3))
-    return float(np.sign(m3) * (abs(m3) + eps) ** (1.0 / 3.0))
+    threshold = float(np.quantile(finite, alpha))
+    tail = finite[finite >= threshold]
+    if tail.size == 0:
+        return float("nan")
+    return float(tail.mean())
+
 
 plt.rcParams.update(
     {
@@ -124,23 +128,13 @@ def _stacked_y_bar(
     *,
     mean_rl: float, mean_bm: float,
     std_rl: float, std_bm: float,
-    pen_rl: float, pen_bm: float,
     risk_lambda: float,
-    skew_lambda: float,
-    skew_penalty: str,
-    include_skew: bool,
-    usd_scale: float | None = None,
 ) -> None:
-    """Render Y(0) as a stacked bar showing mean / λ_std·std / λ_skew·penalty(skew_proxy)."""
+    """Render Y(0) = mean + λ_std·std as a stacked bar."""
     segments = [
         ("Mean", mean_rl, mean_bm, "#4A90E2"),
         (f"λ_std·std  (λ={risk_lambda:g})", risk_lambda * std_rl, risk_lambda * std_bm, "#F5A623"),
     ]
-    if include_skew:
-        segments.append(
-            (f"λ_skew·{skew_penalty}(skew_proxy)  (λ={skew_lambda:g})",
-             skew_lambda * pen_rl, skew_lambda * pen_bm, "#D0021B")
-        )
 
     x = np.array([0, 1])
     bot = np.zeros(2, dtype=float)
@@ -155,11 +149,7 @@ def _stacked_y_bar(
         bot = bot + vals
 
     for i, total in enumerate(bot):
-        if usd_scale is not None and np.isfinite(usd_scale):
-            label = f"{total:.2f}%\n(${total * usd_scale:.3f})"
-        else:
-            label = f"{total:.2f}"
-        ax.text(x[i], total, label, ha="center", va="bottom",
+        ax.text(x[i], total, f"{total:.2f}", ha="center", va="bottom",
                 fontsize=10, fontweight="bold")
 
     ax.set_xticks([0, 1], ["RL", "Benchmark"])
@@ -179,7 +169,8 @@ def _plot_training_loss(ax: plt.Axes, train_steps: pd.DataFrame | None) -> None:
         return
     loss_values = train_steps["loss"].dropna().to_numpy(dtype=float)
     if loss_values.size == 0:
-        _hide_training_panel(ax)
+        ax.text(0.5, 0.5, "No training data available", ha="center", va="center", color=COLOR_NEUTRAL, fontsize=10)
+        ax.set_axis_off()
         return
     x = np.arange(len(loss_values), dtype=int)
     smoothed = pd.Series(loss_values).rolling(200, min_periods=1).mean().to_numpy()
@@ -208,19 +199,8 @@ def _plot_training_episode_cost(ax: plt.Axes, train_episodes: pd.DataFrame | Non
     ax.legend()
 
 
-def plot_run(
-    run_id: str,
-    outputs_dir: str | Path | None = None,
-    include_skew_in_y: bool = False,
-) -> None:
-    """Render the standard run dashboard.
-
-    If `include_skew_in_y` is True, Y(0) is recomputed locally as
-        Y = mean + λ_std · std + λ_skew · skew_proxy
-    using the cube-root-of-m₃ proxy and the λ's from cfg["hedging_agent"].
-    Otherwise Y(0) = mean + λ_std · std is read from *_summary.csv
-    (the value written at run time).
-    """
+def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
+    """Render the standard run dashboard for a given run_id."""
     artifacts = _load_run_artifacts(run_id, outputs_dir)
     cfg = artifacts["cfg"]
     rl_steps = artifacts["rl_steps"]
@@ -240,15 +220,15 @@ def plot_run(
     skew_rl = _nanskewness(rl_episodes["total_cost"].tolist()) if not rl_episodes.empty and "total_cost" in rl_episodes.columns else float("nan")
     skew_bm = _nanskewness(bm_episodes["total_cost"].tolist()) if not bm_episodes.empty and "total_cost" in bm_episodes.columns else float("nan")
 
-    # Cube-root-of-m3 proxy on the rescaled total_cost (% option price).
-    # Same formula as the SkewDDPG actor-loss penalty, so it lives on the
-    # same scale as mean/std in the plots above.
-    cbrt_rl = _cbrt_m3_proxy(rl_episodes["total_cost"].tolist()) if not rl_episodes.empty and "total_cost" in rl_episodes.columns else float("nan")
-    cbrt_bm = _cbrt_m3_proxy(bm_episodes["total_cost"].tolist()) if not bm_episodes.empty and "total_cost" in bm_episodes.columns else float("nan")
+    # CVaR at the same α the QRDDPG actor optimises.  Defaults to 0.95
+    # when the config doesn't specify one (DeepDPG runs, etc.).
+    cvar_alpha = float(cfg.get("hedging_agent", {}).get("cvar_alpha", 0.95))
+    rl_costs_list = rl_episodes["total_cost"].tolist() if not rl_episodes.empty and "total_cost" in rl_episodes.columns else []
+    bm_costs_list = bm_episodes["total_cost"].tolist() if not bm_episodes.empty and "total_cost" in bm_episodes.columns else []
+    cvar_rl = _cvar(rl_costs_list, cvar_alpha)
+    cvar_bm = _cvar(bm_costs_list, cvar_alpha)
 
     risk_lambda = float(cfg.get("hedging_agent", {}).get("risk_lambda", 1.5))
-    skew_lambda = float(cfg.get("hedging_agent", {}).get("skew_lambda", 0.0))
-    skew_penalty = str(cfg.get("hedging_agent", {}).get("skew_penalty", "positive")).lower()
 
     # All *_total_cost columns in the CSVs are rescaled ×100/option_price_t0,
     # so multiplying a plotted value by (option_price_t0 / 100) gives back
@@ -271,28 +251,9 @@ def plot_run(
     trade_rl_usd = _mean_trade_cost_usd(rl_episodes)
     trade_bm_usd = _mean_trade_cost_usd(bm_episodes)
 
-    # Apply the SAME penalty function the actor uses on skew_proxy, so the
-    # stacked Y(0) bar matches what the agent actually optimises.
-    def _penalty(x: float) -> float:
-        if not np.isfinite(x):
-            return float("nan")
-        if skew_penalty == "absolute":
-            return abs(x)
-        if skew_penalty == "signed":
-            return x
-        return max(0.0, x)  # default "positive" → ReLU, right-tail only
-
-    pen_rl = _penalty(cbrt_rl)
-    pen_bm = _penalty(cbrt_bm)
-
-    if include_skew_in_y:
-        y_rl = mean_rl + risk_lambda * std_rl + skew_lambda * pen_rl
-        y_bm = mean_bm + risk_lambda * std_bm + skew_lambda * pen_bm
-        y_title = f"Y(0) = mean + {risk_lambda:g}·std + {skew_lambda:g}·{skew_penalty}(skew_proxy)"
-    else:
-        y_rl = _get_scalar(rl_summary, "y_objective")
-        y_bm = _get_scalar(bm_summary, "y_objective")
-        y_title = f"Y(0) = mean + {risk_lambda:g}·std"
+    y_rl = _get_scalar(rl_summary, "y_objective")
+    y_bm = _get_scalar(bm_summary, "y_objective")
+    y_title = f"Y(0) = mean + {risk_lambda:g}·std"
     improvement_pct = 100.0 * (y_bm - y_rl) / y_bm if y_bm not in (0.0, np.nan) and np.isfinite(y_bm) and y_bm != 0 else float("nan")
 
     fig, axes = plt.subplots(5, 2, figsize=(14, 22))
@@ -306,8 +267,8 @@ def plot_run(
         float(max(bm_steps["action"].max(), rl_steps["action"].max())),
     ]
     ax.plot(lims, lims, linestyle="--", color=COLOR_NEUTRAL, linewidth=1.0)
-    ax.text(0.05, 0.95, "Over-hedge", transform=ax.transAxes, ha="left", va="top", fontsize=9, color=COLOR_NEUTRAL,alpha=0.8)
-    ax.text(0.95, 0.05, "Under-hedge", transform=ax.transAxes, ha="right", va="bottom", fontsize=9, color=COLOR_NEUTRAL,alpha=0.8)
+    ax.text(0.05, 0.95, "Over-hedge", transform=ax.transAxes, ha="left", va="top", fontsize=9, color=COLOR_NEUTRAL, alpha=0.8)
+    ax.text(0.95, 0.05, "Under-hedge", transform=ax.transAxes, ha="right", va="bottom", fontsize=9, color=COLOR_NEUTRAL, alpha=0.8)
     ax.set_aspect("equal", adjustable="box")
     ax.set_xlabel("Benchmark holding")
     ax.set_ylabel("RL holding")
@@ -334,11 +295,7 @@ def plot_run(
         y_title,
         mean_rl=mean_rl, mean_bm=mean_bm,
         std_rl=std_rl, std_bm=std_bm,
-        pen_rl=pen_rl, pen_bm=pen_bm,
         risk_lambda=risk_lambda,
-        skew_lambda=skew_lambda,
-        skew_penalty=skew_penalty,
-        include_skew=include_skew_in_y,
     )
     _bar_with_labels(axes[1, 1], [mean_rl, mean_bm], "Mean Total Cost", "Mean total cost")
     _bar_with_labels(axes[2, 0], [std_rl, std_bm], "Std Total Cost", "Std total cost")
@@ -347,11 +304,11 @@ def plot_run(
 
     _bar_with_labels(
         axes[3, 0],
-        [pen_rl, pen_bm],
-        f"Skew Penalty — {skew_penalty}(skew_proxy) (% option price)",
-        f"{skew_penalty}(skew_proxy)",
+        [cvar_rl, cvar_bm],
+        f"CVaR(α={cvar_alpha:g}) — avg of the worst {(1 - cvar_alpha) * 100:.0f}% of episodes",
+        f"CVaR({cvar_alpha:g})",
+        usd_scale=usd_scale,
     )
-    axes[3, 0].axhline(0, color=COLOR_NEUTRAL, linewidth=0.8)
 
     # Real transaction cost per episode, in $ (setup + per-step rebal + terminal liquidation).
     ax_tc = axes[3, 1]
@@ -380,5 +337,3 @@ def plot_run(
     )
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     plt.show()
-
-
