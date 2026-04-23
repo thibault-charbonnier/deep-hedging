@@ -1,7 +1,7 @@
 {
     "simulation":
     {
-        "maturity": 0.0833333333,
+        "maturity": 0.25,
         "S0": 100.0,
         "gbm":
         {
@@ -36,7 +36,7 @@
     "training_schedule":
     {
         "train_episodes": 10000,
-        "eval_episodes": 3000,
+        "eval_episodes": 10000,
         "update_frequency": 5
     },
     "hedging_agent":
