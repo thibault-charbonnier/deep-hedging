@@ -91,6 +91,52 @@ def _bar_with_labels(ax: plt.Axes, values: list[float], title: str, ylabel: str)
     ax.set_title(title)
 
 
+def _stacked_y_bar(
+    ax: plt.Axes,
+    title: str,
+    *,
+    mean_rl: float, mean_bm: float,
+    std_rl: float, std_bm: float,
+    pen_rl: float, pen_bm: float,
+    risk_lambda: float,
+    skew_lambda: float,
+    skew_penalty: str,
+    include_skew: bool,
+) -> None:
+    """Render Y(0) as a stacked bar showing mean / λ_std·std / λ_skew·penalty(skew_proxy)."""
+    segments = [
+        ("Mean", mean_rl, mean_bm, "#4A90E2"),
+        (f"λ_std·std  (λ={risk_lambda:g})", risk_lambda * std_rl, risk_lambda * std_bm, "#F5A623"),
+    ]
+    if include_skew:
+        segments.append(
+            (f"λ_skew·{skew_penalty}(skew_proxy)  (λ={skew_lambda:g})",
+             skew_lambda * pen_rl, skew_lambda * pen_bm, "#D0021B")
+        )
+
+    x = np.array([0, 1])
+    bot = np.zeros(2, dtype=float)
+    for label, vrl, vbm, color in segments:
+        vals = np.array([vrl, vbm], dtype=float)
+        ax.bar(x, vals, bottom=bot, width=0.5, color=color, edgecolor="white", label=label)
+        for i, v in enumerate(vals):
+            if abs(v) > 1.0:
+                ax.text(x[i], bot[i] + v / 2.0, f"{v:.1f}",
+                        ha="center", va="center", fontsize=8,
+                        color="white", fontweight="bold")
+        bot = bot + vals
+
+    for i, total in enumerate(bot):
+        ax.text(x[i], total, f"{total:.2f}", ha="center", va="bottom",
+                fontsize=10, fontweight="bold")
+
+    ax.set_xticks([0, 1], ["RL", "Benchmark"])
+    ax.set_ylabel("Y(0)")
+    ax.set_title(title)
+    ax.axhline(0, color=COLOR_NEUTRAL, linewidth=0.8)
+    ax.legend(loc="upper right", fontsize=8)
+
+
 def _plot_training_loss(ax: plt.Axes, train_steps: pd.DataFrame | None) -> None:
     ax.set_title("Training Loss")
     ax.set_xlabel("Update step")
@@ -130,7 +176,19 @@ def _plot_training_episode_cost(ax: plt.Axes, train_episodes: pd.DataFrame | Non
     ax.legend()
 
 
-def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
+def plot_run(
+    run_id: str,
+    outputs_dir: str | Path | None = None,
+    include_skew_in_y: bool = False,
+) -> None:
+    """Render the standard run dashboard.
+
+    If `include_skew_in_y` is True, Y(0) is recomputed locally as
+        Y = mean + λ_std · std + λ_skew · skew_proxy
+    using the cube-root-of-m₃ proxy and the λ's from cfg["hedging_agent"].
+    Otherwise Y(0) = mean + λ_std · std is read from *_summary.csv
+    (the value written at run time).
+    """
     artifacts = _load_run_artifacts(run_id, outputs_dir)
     cfg = artifacts["cfg"]
     rl_steps = artifacts["rl_steps"]
@@ -142,13 +200,10 @@ def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
     train_steps = artifacts["train_steps"]
     train_episodes = artifacts["train_episodes"]
 
-    y_rl = _get_scalar(rl_summary, "y_objective")
-    y_bm = _get_scalar(bm_summary, "y_objective")
     mean_rl = _get_scalar(rl_summary, "mean_total_cost")
     mean_bm = _get_scalar(bm_summary, "mean_total_cost")
     std_rl = _get_scalar(rl_summary, "std_total_cost")
     std_bm = _get_scalar(bm_summary, "std_total_cost")
-    improvement_pct = 100.0 * (y_bm - y_rl) / y_bm if y_bm not in (0.0, np.nan) and np.isfinite(y_bm) and y_bm != 0 else float("nan")
 
     skew_rl = _nanskewness(rl_episodes["total_cost"].tolist()) if not rl_episodes.empty and "total_cost" in rl_episodes.columns else float("nan")
     skew_bm = _nanskewness(bm_episodes["total_cost"].tolist()) if not bm_episodes.empty and "total_cost" in bm_episodes.columns else float("nan")
@@ -158,6 +213,34 @@ def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
     # same scale as mean/std in the plots above.
     cbrt_rl = _cbrt_m3_proxy(rl_episodes["total_cost"].tolist()) if not rl_episodes.empty and "total_cost" in rl_episodes.columns else float("nan")
     cbrt_bm = _cbrt_m3_proxy(bm_episodes["total_cost"].tolist()) if not bm_episodes.empty and "total_cost" in bm_episodes.columns else float("nan")
+
+    risk_lambda = float(cfg.get("hedging_agent", {}).get("risk_lambda", 1.5))
+    skew_lambda = float(cfg.get("hedging_agent", {}).get("skew_lambda", 0.0))
+    skew_penalty = str(cfg.get("hedging_agent", {}).get("skew_penalty", "positive")).lower()
+
+    # Apply the SAME penalty function the actor uses on skew_proxy, so the
+    # stacked Y(0) bar matches what the agent actually optimises.
+    def _penalty(x: float) -> float:
+        if not np.isfinite(x):
+            return float("nan")
+        if skew_penalty == "absolute":
+            return abs(x)
+        if skew_penalty == "signed":
+            return x
+        return max(0.0, x)  # default "positive" → ReLU, right-tail only
+
+    pen_rl = _penalty(cbrt_rl)
+    pen_bm = _penalty(cbrt_bm)
+
+    if include_skew_in_y:
+        y_rl = mean_rl + risk_lambda * std_rl + skew_lambda * pen_rl
+        y_bm = mean_bm + risk_lambda * std_bm + skew_lambda * pen_bm
+        y_title = f"Y(0) = mean + {risk_lambda:g}·std + {skew_lambda:g}·{skew_penalty}(skew_proxy)"
+    else:
+        y_rl = _get_scalar(rl_summary, "y_objective")
+        y_bm = _get_scalar(bm_summary, "y_objective")
+        y_title = f"Y(0) = mean + {risk_lambda:g}·std"
+    improvement_pct = 100.0 * (y_bm - y_rl) / y_bm if y_bm not in (0.0, np.nan) and np.isfinite(y_bm) and y_bm != 0 else float("nan")
 
     fig, axes = plt.subplots(5, 2, figsize=(14, 22))
     axes = np.asarray(axes)
@@ -193,13 +276,28 @@ def plot_run(run_id: str, outputs_dir: str | Path | None = None) -> None:
     ax.set_xlabel("Total hedging cost")
     ax.set_ylabel("Density")
 
-    _bar_with_labels(axes[1, 0], [y_rl, y_bm], "Y Objective", "Y objective")
+    _stacked_y_bar(
+        axes[1, 0],
+        y_title,
+        mean_rl=mean_rl, mean_bm=mean_bm,
+        std_rl=std_rl, std_bm=std_bm,
+        pen_rl=pen_rl, pen_bm=pen_bm,
+        risk_lambda=risk_lambda,
+        skew_lambda=skew_lambda,
+        skew_penalty=skew_penalty,
+        include_skew=include_skew_in_y,
+    )
     _bar_with_labels(axes[1, 1], [mean_rl, mean_bm], "Mean Total Cost", "Mean total cost")
     _bar_with_labels(axes[2, 0], [std_rl, std_bm], "Std Total Cost", "Std total cost")
     _bar_with_labels(axes[2, 1], [skew_rl, skew_bm], "Skewness (statistical, dimensionless)", "Skewness")
     axes[2, 1].axhline(0, color=COLOR_NEUTRAL, linewidth=0.8)
 
-    _bar_with_labels(axes[3, 0], [cbrt_rl, cbrt_bm], "Skew Proxy — cube-root of m₃ (% option price)", "sign(m₃)·|m₃|^(1/3)")
+    _bar_with_labels(
+        axes[3, 0],
+        [pen_rl, pen_bm],
+        f"Skew Penalty — {skew_penalty}(skew_proxy) (% option price)",
+        f"{skew_penalty}(skew_proxy)",
+    )
     axes[3, 0].axhline(0, color=COLOR_NEUTRAL, linewidth=0.8)
     axes[3, 1].set_axis_off()
 
