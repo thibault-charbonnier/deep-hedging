@@ -20,7 +20,9 @@ class BartlettDeltaBenchmark:
         self.maturity = float(config["simulation"]["maturity"])
         self.r = float(config["derivative"].get("rf_rate", 0.0))
         self.q = float(config["derivative"].get("div_rate", 0.0))
-        self.sigma_ref = float(config["simulation"]["gbm"]["sigma"])
+        # σ_ref must match HedgingEnv.sigma_ref (= σ_0 of the process on path),
+        # which under SABR is sabr.sigma0 — not gbm.sigma.
+        self.sigma_ref = float(config["simulation"]["sabr"]["sigma0"])
         self.nu = float(config["simulation"]["sabr"]["nu"])
         self.rho = float(config["simulation"]["sabr"]["rho"])
 

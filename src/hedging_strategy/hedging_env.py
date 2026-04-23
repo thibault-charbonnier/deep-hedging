@@ -44,6 +44,11 @@ class HedgingEnv:
             self._vol_path = np.sqrt(np.maximum(self.path_dict["variance"], 1e-10))
         else:
             self._vol_path = np.full_like(self.path_data, self.valuation_sigma)
+        # Reference vol for state normalization: σ_0 of the process actually
+        # used to generate this path. Decoupled from `valuation_sigma` (which
+        # is tied to the BS pricing kernel) so that scale stays consistent
+        # across processes even if σ_0 ≠ gbm.sigma.
+        self.sigma_ref = float(self._vol_path[0])
         self.n_steps = len(self.path_data) - 1
         self.times = np.linspace(0.0, self.maturity, len(self.path_data))
 
@@ -113,5 +118,5 @@ class HedgingEnv:
             hedge_pos,
             math.log(spot / self.valuation_engine.K),
             ttm / self.maturity if self.maturity > 0 else 0.0,
-            vol / self.valuation_sigma,
+            vol / self.sigma_ref,
         ], dtype=np.float32)

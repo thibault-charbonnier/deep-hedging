@@ -36,13 +36,13 @@
     "training_schedule":
     {
         "train_episodes": 10000,
-        "eval_episodes": 10000,
+        "eval_episodes": 5000,
         "update_frequency": 5
     },
     "hedging_agent":
     {
         "exploration_rate_start": 1.0,
-        "exploration_rate_end": 0.05,
+        "exploration_rate_end": 0.0,
         "exploration_rate_decay": 0.9999,
         "actor_learning_rate": 0.0001,
         "critic_learning_rate": 0.001,
@@ -68,9 +68,9 @@
     },
     "run":
     {
-        "maturity": 0.0833333333,
+        "maturity": 0.25,
         "rebalancing": 1,
-        "process": "GBM",
+        "process": "SABR",
         "agent": "DeepDPG",
         "benchmark": "BsDelta",
         "seed": 42,
