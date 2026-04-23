@@ -1,9 +1,5 @@
 import logging
-import cProfile
-import io
-import pstats
 import argparse
-from pathlib import Path
 from rich.logging import RichHandler
 from src.utils.helpers import json_to_dict, set_global_seed
 from src.orchestrator import Orchestrator
@@ -77,7 +73,6 @@ def _run_pipeline(config: dict) -> tuple[RunStore, RunContext]:
     ok = False
     try:
         risk_lambda = float(config["hedging_agent"]["risk_lambda"])
-        save_figures = bool(run_cfg["save_figures"])
 
         for label, run_step in (
             ("train", runner.train),
@@ -90,7 +85,6 @@ def _run_pipeline(config: dict) -> tuple[RunStore, RunContext]:
                 result=result,
                 label=label,
                 risk_lambda=risk_lambda,
-                save_figures=save_figures,
                 option_price_t0=option_price_t0,
             )
 
@@ -106,18 +100,15 @@ def main() -> None:
     parser.add_argument("--config", default="config.json", help="Path to config file (default: config.json)")
     args = parser.parse_args()
 
-    # Load configuration
     config = json_to_dict(args.config)
     run_cfg = config.get("run", {})
 
-    # Set seed if provided
     seed = run_cfg.get("seed")
     if seed is not None:
         seed = int(seed)
         set_global_seed(seed)
         logger.info("Seed set to %d", seed)
 
-    # Get maturity and rebalancing from config
     maturity_years = float(run_cfg.get("maturity", 0.25))
     config["simulation"]["maturity"] = maturity_years
 
@@ -133,30 +124,10 @@ def main() -> None:
         seed or "default",
     )
 
-    # Run profiler if enabled
-    profiling_enabled = bool(run_cfg.get("enable_cprofile", False))
-    profile_top_n = int(run_cfg.get("profile_top_n", 60))
-
-    profiler = cProfile.Profile() if profiling_enabled else None
-    if profiler is not None:
-        profiler.enable()
-
-    store, ctx = _run_pipeline(config=config)
-
-    if profiler is not None:
-        profiler.disable()
-        s = io.StringIO()
-        stats = pstats.Stats(profiler, stream=s).sort_stats("cumulative")
-        stats.print_stats(profile_top_n)
-        report = s.getvalue()
-        print(report)
-        store.save_profile_text(ctx=ctx, stats_text=report)
-        prof_path = Path(ctx.profile_dir) / "cprofile.prof"
-        profiler.dump_stats(str(prof_path))
+    _run_pipeline(config=config)
 
     logger.info("--- END ---")
 
 
 if __name__ == "__main__":
     main()
-

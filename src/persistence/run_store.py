@@ -7,9 +7,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import matplotlib.pyplot as plt
-import pandas as pd
-
 from ..hedging_result import HedgingResult
 from ..utils.helpers import append_csv_row, build_run_id, dump_json, ensure_dir
 
@@ -21,8 +18,6 @@ class RunContext:
     root_dir: Path
     data_dir: Path
     tables_dir: Path
-    figures_dir: Path
-    profile_dir: Path
 
 
 class RunStore:
@@ -45,8 +40,6 @@ class RunStore:
             root_dir=root,
             data_dir=ensure_dir(root / "data"),
             tables_dir=ensure_dir(root / "tables"),
-            figures_dir=ensure_dir(root / "figures"),
-            profile_dir=ensure_dir(root / "profile"),
         )
         if config is not None:
             dump_json(root / "config.json", config)
@@ -69,7 +62,6 @@ class RunStore:
         result: HedgingResult,
         label: str,
         risk_lambda: float = 1.5,
-        save_figures: bool = True,
         option_price_t0: float | None = None,
     ) -> None:
         step_df = result.step_frame()
@@ -101,9 +93,6 @@ class RunStore:
         if not summary_df.empty:
             summary_df.to_csv(ctx.tables_dir / f"{label}_summary.csv", index=False)
 
-        if save_figures:
-            self._save_figures(ctx=ctx, step_df=step_df, episode_df=episode_df, label=label)
-
     def finalize(self, *, ctx: RunContext, ok: bool, note: str = "") -> None:
         append_csv_row(
             self.index_path,
@@ -115,37 +104,3 @@ class RunStore:
                 "note": note,
             },
         )
-
-    def save_profile_text(self, *, ctx: RunContext, stats_text: str) -> None:
-        (ctx.profile_dir / "cprofile.txt").write_text(stats_text, encoding="utf-8")
-
-    def _save_figures(self, *, ctx: RunContext, step_df: pd.DataFrame, episode_df: pd.DataFrame, label: str) -> None:
-        if not episode_df.empty and "total_cost" in episode_df.columns:
-            plt.figure(figsize=(7, 4))
-            for split_name, g in episode_df.groupby("split", sort=False):
-                plt.hist(g["total_cost"], bins=30, alpha=0.45, label=split_name)
-            plt.title(f"Total cost distribution - {label}")
-            plt.xlabel("Total hedging cost")
-            plt.ylabel("Count")
-            plt.legend()
-            plt.tight_layout()
-            plt.savefig(ctx.figures_dir / f"{label}_cost_dist.png", dpi=150)
-            plt.close()
-
-        if not step_df.empty and {"episode_idx", "action"}.issubset(step_df.columns):
-            df = step_df.copy()
-            df["prev_action"] = df.groupby(["split", "episode_idx"], sort=False)["action"].shift(1).fillna(0.0)
-            sample = df[df["step_idx"] > 0]
-            if not sample.empty:
-                plt.figure(figsize=(6, 6))
-                plt.scatter(sample["prev_action"], sample["action"], s=4, alpha=0.25)
-                lo = min(sample["prev_action"].min(), sample["action"].min())
-                hi = max(sample["prev_action"].max(), sample["action"].max())
-                plt.plot([lo, hi], [lo, hi], linestyle="--", linewidth=1)
-                plt.title(f"Action stability map - {label}")
-                plt.xlabel("Previous holding")
-                plt.ylabel("Current holding")
-                plt.tight_layout()
-                plt.savefig(ctx.figures_dir / f"{label}_action_scatter.png", dpi=150)
-                plt.close()
-

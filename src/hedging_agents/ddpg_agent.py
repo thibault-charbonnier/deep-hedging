@@ -51,7 +51,6 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
         self.batch_size = int(agent_cfg.get("learning_batch_size", 128))
         self.buffer_size = int(agent_cfg.get("replay_capacity", 100_000))
         self.min_buffer = int(agent_cfg.get("min_buffer_size", self.batch_size))
-        self.grad_clip = float(agent_cfg.get("grad_clip", 1.0))
         self.risk_lambda = float(agent_cfg.get("risk_lambda", 1.5))
         self.action_low = float(agent_cfg.get("action_low", 0.0))
         self.action_high = float(agent_cfg.get("action_high", 1.0))
@@ -187,12 +186,10 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
 
         self.critic_1_opt.zero_grad()
         loss_c1.backward()
-        torch.nn.utils.clip_grad_norm_(self.critic_1.parameters(), self.grad_clip)
         self.critic_1_opt.step()
 
         self.critic_2_opt.zero_grad()
         loss_c2.backward()
-        torch.nn.utils.clip_grad_norm_(self.critic_2.parameters(), self.grad_clip)
         self.critic_2_opt.step()
 
         prios = (td1.detach().sqrt() + td2.detach().sqrt()).cpu().numpy().reshape(-1)
@@ -214,7 +211,6 @@ class DeepDPGHedgingAgent(AbstractHedgingAgent):
 
         self.actor_opt.zero_grad()
         actor_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), self.grad_clip)
         self.actor_opt.step()
 
         for p in self.critic_1.parameters():

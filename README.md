@@ -121,9 +121,8 @@ python main.py --config chemin/vers/autre_config.json
 1. Charge `config.json`.
 2. Fixe la seed si `run.seed` est défini (reproductibilité totale : numpy, random, torch).
 3. Calcule `n_steps = round(maturity · 252 / rebalancing)` à partir de `run.maturity` (années) et `run.rebalancing` (jours).
-4. Active optionnellement `cProfile` si `run.enable_cprofile = true`.
-5. Lance le pipeline `train` → `eval_agent` → `eval_benchmark`.
-6. Sauvegarde tous les artefacts sous `outputs/<run_id>/`.
+4. Lance le pipeline `train` → `eval_agent` → `eval_benchmark`.
+5. Sauvegarde tous les artefacts sous `outputs/<run_id>/`.
 
 ---
 
@@ -191,8 +190,6 @@ C'est le **seul** endroit où paramétrer un run.
     "replay_capacity": 200000,
     "min_buffer_size": 1024,
     "target_update_freq": 100,
-    "grad_clip": 1.0,
-    "grad_clip_q3": 0.5,
     "risk_lambda": 1.5,
     "skew_lambda": 0.1,
     "skew_eps": 1e-8,
@@ -209,13 +206,11 @@ C'est le **seul** endroit où paramétrer un run.
 - **`replay_capacity`** : taille max du buffer. Doit être ≥ `train_episodes × n_steps`. À 200k avec ~21 pas/épisode × 15k épisodes = 315k, on sature un peu → augmenter si besoin, ou garder tel quel (FIFO est acceptable pour ce problème).
 - **`min_buffer_size`** : aucun `learn()` avant que le buffer contienne ≥ N transitions. Évite d'apprendre sur 1–2 samples au début.
 - **`target_update_freq`** : hard copy des réseaux target tous les N updates (convention DQN, pas de soft update ici).
-- **`grad_clip`** : clipping de la norme du gradient (actor et critiques Q1/Q2). `1.0` est sûr.
 - **`risk_lambda` (λ_std)** : trade-off mean-std dans la loss de l'actor : `F = E[C] + λ · std(C)`. `1.5` correspond au papier. Plus grand → couverture plus conservative.
 - **Paramètres SkewDDPG (`SkewDeepDPG`)** :
-  - **`skew_lambda`** : poids de la pénalité de skewness dans l'actor.
+  - **`skew_lambda`** : poids de la pénalité d'asymétrie dans l'actor. Appliquée au proxy de skewness `s_proxy = sign(m₃)·(|m₃|+ε)^(1/3)` qui vit sur la même échelle que `std` — `skew_lambda = 0.1` est un bon point de départ, ajuster à mesure des runs.
   - **`skew_penalty`** : `"positive"` (pénalise la queue droite via ReLU, **défaut recommandé**), `"absolute"` (pénalise toute asymétrie), `"signed"` (bénéfice si skew négatif).
-  - **`skew_eps`** : stabilisation du calcul de skew (évite division par 0).
-  - **`grad_clip_q3`** : clipping plus agressif pour Q3 (moments d'ordre 3 sont instables) — `0.5` recommandé.
+  - **`skew_eps`** : régularisation numérique dans le cube root signé et le clamp de variance.
 - **`action_low` / `action_high`** : bornes de la holding `H`. `[0, 1]` pour une short call couverte par un long sur le sous-jacent (0 ≤ H ≤ 1).
 
 ### `derivative` — paramètres de l'option
@@ -240,10 +235,7 @@ C'est le **seul** endroit où paramétrer un run.
     "process": "GBM",
     "agent": "DeepDPG",
     "benchmark": "BsDelta",
-    "seed": 42,
-    "save_figures": false,
-    "enable_cprofile": false,
-    "profile_top_n": 60
+    "seed": 42
 }
 ```
 
@@ -255,8 +247,6 @@ C'est le **seul** endroit où paramétrer un run.
 - **`rebalancing`** : espacement entre rebalancements (jours de bourse). `n_steps = round(maturity · 252 / rebalancing)`. Ex. `maturity=0.25, rebalancing=1` → 63 pas.
 - **`process / agent / benchmark`** : doivent matcher les noms exposés dans `src/utils/enums.py`.
 - **`seed`** : si fourni, fixe numpy + random + torch.
-- **`save_figures`** : `true` active la sauvegarde automatique de quelques plots par label (distribution de coût + action-scatter) via `RunStore._save_figures`. Désactiver pour gagner du temps — les plots riches viennent du notebook.
-- **`enable_cprofile`** : profilage CPU complet écrit sous `outputs/<run_id>/profile/`.
 
 ### Règles de cohérence à connaître
 
@@ -281,11 +271,9 @@ Chaque run crée `outputs/<YYYYMMDD_HHMMSS>_<process>_<agent>_<benchmark>_<hash6
 │   ├── train_steps.csv              # 1 ligne par pas × épisode (train)
 │   ├── eval_agent_steps.csv         # idem (eval agent)
 │   └── eval_benchmark_steps.csv     # idem (eval benchmark)
-├── tables/
-│   ├── *_episodes.csv       # agrégation par épisode (total_cost, loss moyenne…)
-│   └── *_summary.csv        # résumé : mean_total_cost, std_total_cost, y_objective
-├── figures/                 # plots auto si save_figures=true
-└── profile/                 # cprofile.txt et cprofile.prof si enable_cprofile=true
+└── tables/
+    ├── *_episodes.csv       # agrégation par épisode (total_cost, loss moyenne…)
+    └── *_summary.csv        # résumé : mean_total_cost, std_total_cost, y_objective
 ```
 
 ### Colonnes importantes
@@ -352,13 +340,21 @@ avec coût initial `−κ·|S_0·H_0|` et coût final `−κ·|S_n·H_n|` (= 0 c
 
 ### Agent SkewDDPG
 
-Variante qui apprend en plus un critique `Q_3(s,a) ≈ E[C³]` pour contrôler la skewness du coût :
+Variante qui apprend en plus un critique `Q_3(s,a) ≈ E[C³]` pour contrôler l'asymétrie du coût :
 
 ```
-F = E[C] + λ_std · std(C) + λ_skew · penalty(skew(C))
+F = E[C] + λ_std · std(C) + λ_skew · penalty(s_proxy)
 ```
 
-avec `skew = (Q_3 − 3·Q_1·Q_2 + 2·Q_1³) / (std³ + ε)`. Par défaut, `penalty = ReLU(skew)` — pénalise uniquement la queue droite (gros coûts positifs).
+avec le 3ème moment central `m_3 = Q_3 − 3·Q_1·Q_2 + 2·Q_1³` et le **proxy de skewness par cube root signé** :
+
+```
+s_proxy = sign(m_3) · (|m_3| + ε)^(1/3)
+```
+
+Cette formulation remplace la skewness statistique `m_3 / std³` qui explose numériquement dès que la variance est petite (début d'entraînement, états proches du terminal). Le cube root signé a la **même monotonie** (donc même direction de gradient) mais vit sur la même échelle dimensionnelle que `std` et reste borné — pas de division cubique instable.
+
+Par défaut, `penalty = ReLU(s_proxy)` — pénalise uniquement la queue droite (gros coûts positifs).
 
 ### Benchmarks
 

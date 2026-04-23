@@ -6,7 +6,18 @@ Q2(s,a) ~= E[C^2]
 Q3(s,a) ~= E[C^3]
 
 Actor objective extends mean-std with a skewness penalty:
-    F = E[C] + lambda_std * std(C) + lambda_skew * penalty(skew(C))
+    F = E[C] + lambda_std * std(C) + lambda_skew * penalty(s_proxy)
+
+where s_proxy is a numerically stable signed cube root of the third
+central moment m3 instead of the statistical skewness m3/std^3:
+
+    s_proxy = sign(m3) * (|m3| + eps)^(1/3)
+
+Rationale: the statistical skewness m3/std^3 blows up whenever std is
+small (early training, near-terminal states). The signed cube root has
+the SAME sign/monotonicity as m3 — so it drives the actor in the same
+direction — but lives on the same scale as std/cost, so it stays
+bounded and removes the cubic division.
 """
 from __future__ import annotations
 
@@ -27,7 +38,6 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
         self.skew_lambda = float(agent_cfg.get("skew_lambda", 0.1))
         self.skew_eps = float(agent_cfg.get("skew_eps", 1e-6))
         self.skew_penalty = str(agent_cfg.get("skew_penalty", "positive")).lower()
-        self.grad_clip_q3 = float(agent_cfg.get("grad_clip_q3", self.grad_clip))
 
         # Third critic for E[C^3]
         self.critic_3 = CriticMLP(self.state_dim, 1, self.hidden_dims).to(self.device)
@@ -91,17 +101,14 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
 
         self.critic_1_opt.zero_grad()
         loss_c1.backward()
-        torch.nn.utils.clip_grad_norm_(self.critic_1.parameters(), self.grad_clip)
         self.critic_1_opt.step()
 
         self.critic_2_opt.zero_grad()
         loss_c2.backward()
-        torch.nn.utils.clip_grad_norm_(self.critic_2.parameters(), self.grad_clip)
         self.critic_2_opt.step()
 
         self.critic_3_opt.zero_grad()
         loss_c3.backward()
-        torch.nn.utils.clip_grad_norm_(self.critic_3.parameters(), self.grad_clip_q3)
         self.critic_3_opt.step()
 
         prios = (td1.detach().sqrt() + td2.detach().sqrt() + td3.detach().sqrt()).cpu().numpy().reshape(-1)
@@ -125,15 +132,16 @@ class SkewDeepDPGHedgingAgent(DeepDPGHedgingAgent):
         var_a = torch.clamp(q2a - q1a.pow(2), min=self.skew_eps)
         std_a = torch.sqrt(var_a)
         central_m3 = q3a - 3.0 * q1a * q2a + 2.0 * q1a.pow(3)
-        skew_a = central_m3 / (std_a.pow(3) + self.skew_eps)
+        # Signed cube root of m3 — same sign & monotonicity as statistical
+        # skewness, but dimensionally like cost and bounded (no /std^3).
+        skew_proxy = torch.sign(central_m3) * (torch.abs(central_m3) + self.skew_eps).pow(1.0 / 3.0)
 
         actor_loss = (
-            q1a + self.risk_lambda * std_a + self.skew_lambda * self._apply_skew_penalty(skew_a)
+            q1a + self.risk_lambda * std_a + self.skew_lambda * self._apply_skew_penalty(skew_proxy)
         ).mean()
 
         self.actor_opt.zero_grad()
         actor_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), self.grad_clip)
         self.actor_opt.step()
 
         for p in self.critic_1.parameters():
