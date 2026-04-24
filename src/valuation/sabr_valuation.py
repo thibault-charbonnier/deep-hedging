@@ -43,15 +43,10 @@ def bartlett_delta(S, K, T, r, q, sigma_t, nu, rho, option_type="call"):
     """
     F = S * math.exp((r - q) * T)
     sigma_impl = sabr_implied_vol(F, K, T, sigma_t, nu, rho)
+    delta_bs = bs_delta_from_vol(S, K, T, r, q, sigma_impl, option_type)
     if T <= 1e-14:
-        if option_type == "call":
-            return 1.0 if S > K else 0.0
-        return -1.0 if S < K else 0.0
+        return delta_bs
     sqrt_T = math.sqrt(T)
     d1 = (math.log(S/K) + (r - q + 0.5*sigma_impl**2)*T) / (sigma_impl*sqrt_T)
-    if option_type == "call":
-        delta_bs = math.exp(-q*T) * _N.cdf(d1)
-    else:
-        delta_bs = math.exp(-q*T) * (_N.cdf(d1) - 1.0)
     vega = S * math.exp(-q*T) * _N.pdf(d1) * sqrt_T
     return delta_bs + vega * rho * nu / S

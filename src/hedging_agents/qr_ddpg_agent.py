@@ -13,10 +13,16 @@ Training: quantile Huber regression (Dabney et al. 2018, QR-DQN).
                = κ(|u| − 0.5κ)     else
 y_j = r + γ·(1−done)·θ_j(s', π_target(s'))  — target quantiles.
 
-Actor objective: minimise CVaR_α of the predicted cost distribution
-(= average of the upper tail).  α is the risk level; α=0.95 means we
-average the ~5% worst outcomes.  Single, financially interpretable
-risk metric — standard in Basel / Solvency II frameworks.
+Actor objective — selected via ``hedging_agent.actor_objective``:
+
+  - ``"cvar"`` (default): minimise CVaR_α of the predicted cost
+    distribution (= average of the upper-tail quantiles). Single,
+    financially interpretable risk metric — standard in Basel /
+    Solvency II frameworks.
+
+  - ``"mean_variance"``: minimise ``E[C] + risk_lambda · std[C]``,
+    estimated from the quantile grid. Same objective shape as the
+    Cao et al. (2021) DDPG baseline — directly comparable.
 
 Keeps ε-greedy exploration and PER from the DDPG baseline so the
 infra stays identical.
@@ -29,185 +35,96 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from cpprb import PrioritizedReplayBuffer
-
-from .abstract_agent import AbstractHedgingAgent
-from ._rl_common import MLP, QuantileCriticMLP, get_device, hard_update
+from ._rl_common import PERActorCriticAgent, QuantileCriticMLP, hard_update
 
 
-class _Actor(nn.Module):
-    """Deterministic policy network: tanh output rescaled to ``[action_low, action_high]``."""
-
-    def __init__(self, state_dim, hidden_dims, action_low, action_high):
-        super().__init__()
-        self.backbone = MLP(state_dim, 1, hidden_dims, output_activation=nn.Tanh())
-        self.register_buffer("a_lo", torch.tensor([action_low], dtype=torch.float32))
-        self.register_buffer("a_hi", torch.tensor([action_high], dtype=torch.float32))
-
-    def forward(self, s):
-        """Return the deterministic action in ``[a_lo, a_hi]`` for state ``s``."""
-        mid = 0.5 * (self.a_hi + self.a_lo)
-        half = 0.5 * (self.a_hi - self.a_lo)
-        return mid + half * self.backbone(s)
-
-
-class QRDeepDPGHedgingAgent(AbstractHedgingAgent):
-    """Quantile Regression DDPG with CVaR-based actor objective."""
+class QRDeepDPGHedgingAgent(PERActorCriticAgent):
+    """Quantile Regression DDPG with a configurable risk objective (CVaR or mean-variance)."""
 
     def __init__(self, agent_cfg: dict[str, Any]) -> None:
-        """Build actor/critic networks, PER buffer and the CVaR quantile mask from ``agent_cfg``."""
+        """Build the quantile critic and the risk objective on top of the shared plumbing."""
         super().__init__(agent_cfg)
-        self.device = get_device()
-        self.state_dim = int(agent_cfg.get("state_dim", 4))
-        self.hidden_dims = tuple(agent_cfg.get("hidden_dims", [128, 128]))
-        self.lr_actor = float(agent_cfg.get("actor_learning_rate", 1e-4))
-        self.lr_critic = float(agent_cfg.get("critic_learning_rate", 1e-3))
-        self.batch_size = int(agent_cfg.get("learning_batch_size", 128))
-        self.buffer_size = int(agent_cfg.get("replay_capacity", 100_000))
-        self.min_buffer = int(agent_cfg.get("min_buffer_size", self.batch_size))
-        self.action_low = float(agent_cfg.get("action_low", 0.0))
-        self.action_high = float(agent_cfg.get("action_high", 1.0))
 
-        # Distributional-specific hyperparameters.
         self.n_quantiles = int(agent_cfg.get("n_quantiles", 51))
         self.cvar_alpha = float(agent_cfg.get("cvar_alpha", 0.95))
         self.huber_kappa = float(agent_cfg.get("huber_kappa", 1.0))
+        self.actor_objective = str(agent_cfg.get("actor_objective", "cvar")).lower()
+        if self.actor_objective not in ("cvar", "mean_variance"):
+            raise ValueError(
+                f"actor_objective must be 'cvar' or 'mean_variance', got {self.actor_objective!r}"
+            )
+        self.risk_lambda = float(agent_cfg.get("risk_lambda", 1.5))
 
-        # ε-greedy (identical to DDPG).
-        self.epsilon = float(agent_cfg.get("exploration_rate_start", 1.0))
-        self.epsilon_min = float(agent_cfg.get("exploration_rate_end", 0.05))
-        self.epsilon_decay = float(agent_cfg.get("exploration_rate_decay", 0.995))
-
-        self.target_update_freq = int(agent_cfg.get("target_update_freq", 100))
-
-        # Networks.
-        self.actor = _Actor(self.state_dim, self.hidden_dims, self.action_low, self.action_high).to(self.device)
-        self.actor_target = _Actor(self.state_dim, self.hidden_dims, self.action_low, self.action_high).to(self.device)
-        self.critic = QuantileCriticMLP(self.state_dim, 1, self.n_quantiles, self.hidden_dims).to(self.device)
-        self.critic_target = QuantileCriticMLP(self.state_dim, 1, self.n_quantiles, self.hidden_dims).to(self.device)
-        hard_update(self.actor_target, self.actor)
+        self.critic = QuantileCriticMLP(
+            self.state_dim, 1, self.n_quantiles, self.hidden_dims
+        ).to(self.device)
+        self.critic_target = QuantileCriticMLP(
+            self.state_dim, 1, self.n_quantiles, self.hidden_dims
+        ).to(self.device)
         hard_update(self.critic_target, self.critic)
-
-        self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=self.lr_actor)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=self.lr_critic)
 
-        # τ_i = (i − 0.5)/N for i=1..N  — fixed quantile fractions.
+        # τ_i = (i − 0.5)/N for i=1..N — fixed quantile fractions.
         tau = (torch.arange(self.n_quantiles, dtype=torch.float32) + 0.5) / self.n_quantiles
         self.register_tau = tau.to(self.device)
 
-        # Mask of which quantiles belong to the upper (1−α) tail — used for CVaR.
-        # For minimisation of cost: upper tail = worst outcomes.
+        # Upper-tail mask for the CVaR objective. If alpha is so high that no
+        # quantile lies above it, fall back to the single worst quantile so
+        # the objective is still well-defined.
         self.cvar_mask = (tau >= self.cvar_alpha).float().to(self.device)
         if self.cvar_mask.sum() == 0:
-            # If α too close to 1 with too few quantiles, fall back to the
-            # single worst quantile so the objective is well defined.
             self.cvar_mask = torch.zeros_like(tau, device=self.device)
             self.cvar_mask[-1] = 1.0
 
-        # Prioritized Experience Replay.
-        self.per_alpha = float(agent_cfg.get("per_alpha", 0.6))
-        self.per_beta_start = float(agent_cfg.get("per_beta_start", 0.4))
-        self.per_beta_frames = int(agent_cfg.get("per_beta_frames", 100_000))
-        self.per_eps = float(agent_cfg.get("per_eps", 1e-6))
-        self.per_frame = 0
+    def _networks(self) -> list[nn.Module]:
+        """Every network driven by the train/eval toggle."""
+        return [self.actor, self.actor_target, self.critic, self.critic_target]
 
-        env_dict = {
-            "obs": {"shape": (self.state_dim,)},
-            "act": {"shape": (1,)},
-            "rew": {},
-            "next_obs": {"shape": (self.state_dim,)},
-            "done": {},
-        }
-        self.replay_buffer = PrioritizedReplayBuffer(
-            size=self.buffer_size,
-            env_dict=env_dict,
-            alpha=self.per_alpha,
-            beta=self.per_beta_start,
-            eps=self.per_eps,
-        )
+    def _critic_nets(self) -> list[nn.Module]:
+        """Online critic frozen during the actor update."""
+        return [self.critic]
 
-        self.train_mode_enabled = True
-        self.learn_steps = 0
+    def _sync_targets(self) -> None:
+        """Hard-copy actor and critic into their target networks."""
+        hard_update(self.actor_target, self.actor)
+        hard_update(self.critic_target, self.critic)
 
-    # ─────────────────────────────────────────────────────────────────
-    # Helpers
-    # ─────────────────────────────────────────────────────────────────
+    def _actor_loss_from_quantiles(self, q_pred: torch.Tensor) -> torch.Tensor:
+        """Scalar actor objective per sample, derived from the predicted cost quantiles ``[B, N]``.
 
-    def _st(self, state):
-        """Convert a numpy state to a ``[1, state_dim]`` tensor on the agent device."""
-        return torch.as_tensor(np.asarray(state, dtype=np.float32), device=self.device).unsqueeze(0)
-
-    def _replay_size(self) -> int:
-        """Return the current number of transitions stored in the replay buffer."""
-        return int(self.replay_buffer.get_stored_size())
-
-    def _update_priorities(self, indices: np.ndarray, priorities: np.ndarray) -> None:
-        """Update the PER priorities for the given sample indices."""
-        self.replay_buffer.update_priorities(indices, priorities)
-
-    def _sample_batch_tensors(self) -> dict[str, Any]:
-        """Sample a PER batch, advance the IS-beta schedule, and return tensors on the device."""
-        self.per_frame += 1
-        beta = min(
-            1.0,
-            self.per_beta_start + self.per_frame * (1.0 - self.per_beta_start) / self.per_beta_frames,
-        )
-        batch = self.replay_buffer.sample(self.batch_size, beta=beta)
-        return {
-            "states": torch.as_tensor(batch["obs"], dtype=torch.float32, device=self.device),
-            "actions": torch.as_tensor(batch["act"], dtype=torch.float32, device=self.device).reshape(-1, 1),
-            "rewards": torch.as_tensor(batch["rew"], dtype=torch.float32, device=self.device).reshape(-1),
-            "next_states": torch.as_tensor(batch["next_obs"], dtype=torch.float32, device=self.device),
-            "dones": torch.as_tensor(batch["done"], dtype=torch.float32, device=self.device).reshape(-1),
-            "weights": torch.as_tensor(batch["weights"], dtype=torch.float32, device=self.device).reshape(-1),
-            "indexes": np.asarray(batch["indexes"], dtype=np.int64).reshape(-1),
-        }
+        ``cvar``: average of the quantiles whose fraction lies in the
+        upper tail (mask selected at ``cvar_alpha``).
+        ``mean_variance``: empirical ``mean + risk_lambda * std`` over
+        the quantile grid, using ``ddof=0`` to match the DDPG baseline.
+        """
+        if self.actor_objective == "cvar":
+            return (q_pred * self.cvar_mask).sum(dim=-1) / self.cvar_mask.sum()
+        # mean_variance
+        mean = q_pred.mean(dim=-1)
+        var = q_pred.var(dim=-1, unbiased=False)
+        std = torch.sqrt(torch.clamp(var, min=1e-8))
+        return mean + self.risk_lambda * std
 
     def _huber_quantile_loss(self, td_errors: torch.Tensor) -> torch.Tensor:
-        """Quantile Huber loss. td_errors: [B, N_current, N_target]."""
+        """Quantile Huber loss. ``td_errors`` has shape ``[B, N_current, N_target]``."""
         abs_e = td_errors.abs()
         huber = torch.where(
             abs_e <= self.huber_kappa,
             0.5 * td_errors.pow(2),
             self.huber_kappa * (abs_e - 0.5 * self.huber_kappa),
         )
-        # τ_i indexed on the SECOND axis (N_current) → broadcast to [1, N, 1].
         tau = self.register_tau.view(1, -1, 1)
         weight = (tau - (td_errors.detach() < 0).float()).abs()
         return (weight * huber).mean(dim=2).sum(dim=1)  # → [B]
 
-    # ─────────────────────────────────────────────────────────────────
-    # Public API
-    # ─────────────────────────────────────────────────────────────────
+    def learn(self) -> float | None:
+        """Run one gradient update on the quantile critic and the risk actor.
 
-    def act(self, state, eval_mode=False):
-        """Return the hedge action for ``state`` (epsilon-greedy during training)."""
-        if (not eval_mode) and self.train_mode_enabled:
-            if np.random.rand() < self.epsilon:
-                return float(np.random.uniform(self.action_low, self.action_high))
-        with torch.no_grad():
-            a = self.actor(self._st(state)).squeeze(0).cpu().numpy()[0]
-        return float(np.clip(a, self.action_low, self.action_high))
-
-    def store_transition(self, state, action, reward, next_state, done):
-        """Push the transition into the prioritized replay buffer."""
-        self.replay_buffer.add(
-            obs=np.asarray(state, dtype=np.float32),
-            act=np.asarray([float(action)], dtype=np.float32),
-            rew=float(reward),
-            next_obs=np.asarray(next_state, dtype=np.float32),
-            done=float(done),
-        )
-
-    def learn(self):
-        """Run one gradient update on the quantile critic and the actor.
-
-        Critic: quantile Huber regression against the bootstrapped target
-        quantiles ``y = r + gamma * (1 - done) * theta(s', pi_target(s'))``.
-        Actor: minimises ``CVaR_alpha`` of the predicted cost
-        distribution (average of quantiles whose fraction exceeds
-        ``cvar_alpha``). Target networks are hard-copied every
-        ``target_update_freq`` updates and epsilon is decayed.
+        Critic: quantile Huber regression against the bootstrapped
+        target quantiles ``y = r + gamma * (1 - done) * theta(s', pi_target(s'))``.
+        Actor: minimises the scalar risk objective selected by
+        ``actor_objective`` (``"cvar"`` or ``"mean_variance"``) derived
+        from the predicted cost quantiles.
         """
         if self._replay_size() < self.min_buffer:
             return None
@@ -220,7 +137,7 @@ class QRDeepDPGHedgingAgent(AbstractHedgingAgent):
         dones = batch["dones"]
         w = batch["weights"]
 
-        # COST convention: we learn the quantiles of the COST distribution
+        # COST convention: learn the quantiles of the COST distribution
         # (C = −R) so that "upper tail = worst" and CVaR = expected worst loss.
         cost = -rewards
 
@@ -242,47 +159,21 @@ class QRDeepDPGHedgingAgent(AbstractHedgingAgent):
         loss_c.backward()
         self.critic_opt.step()
 
-        # ── Per-sample TD priorities (mean |td| across quantiles) ────
+        # PER priorities: mean |TD| across the quantile grid.
         prios = td.detach().abs().mean(dim=(1, 2)).cpu().numpy().reshape(-1)
         prios = np.abs(prios) + self.per_eps
         self._update_priorities(batch["indexes"], prios)
 
-        # ── Actor update (CVaR of predicted cost distribution) ───────
-        for p in self.critic.parameters():
-            p.requires_grad_(False)
-
+        # ── Actor update (risk objective over the predicted cost distribution) ───
+        self._freeze_critics()
         aa = self.actor(states)
         q_pred = self.critic(states, aa)  # [B, N] — predicted cost quantiles
-        # CVaR_α = mean of quantiles i where τ_i ≥ α.
-        mask = self.cvar_mask  # [N]
-        cvar = (q_pred * mask).sum(dim=-1) / mask.sum()
-        actor_loss = cvar.mean()
+        actor_loss = self._actor_loss_from_quantiles(q_pred).mean()
 
         self.actor_opt.zero_grad()
         actor_loss.backward()
         self.actor_opt.step()
+        self._unfreeze_critics()
 
-        for p in self.critic.parameters():
-            p.requires_grad_(True)
-
-        self.learn_steps += 1
-        if self.learn_steps % self.target_update_freq == 0:
-            hard_update(self.actor_target, self.actor)
-            hard_update(self.critic_target, self.critic)
-
-        if self.train_mode_enabled:
-            self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
-
+        self._post_learn_step()
         return float((loss_c + actor_loss.detach()).item())
-
-    def set_eval_mode(self):
-        """Disable exploration and switch every network to ``eval()`` mode."""
-        self.train_mode_enabled = False
-        for m in [self.actor, self.actor_target, self.critic, self.critic_target]:
-            m.eval()
-
-    def set_train_mode(self):
-        """Enable exploration and switch every network to ``train()`` mode."""
-        self.train_mode_enabled = True
-        for m in [self.actor, self.actor_target, self.critic, self.critic_target]:
-            m.train()

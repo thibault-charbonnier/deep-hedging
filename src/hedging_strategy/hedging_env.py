@@ -48,16 +48,16 @@ class HedgingEnv:
         the time index and previous hedge.
         """
         if isinstance(path_data, dict):
-            self.path_dict = {k: np.asarray(v, dtype=float) for k, v in path_data.items()}
-            self.path_data = self.path_dict["S"]
+            arrays = {k: np.asarray(v, dtype=float) for k, v in path_data.items()}
+            self.path_data = arrays["S"]
+            if "sigma" in arrays:
+                self._vol_path = arrays["sigma"]
+            elif "variance" in arrays:
+                self._vol_path = np.sqrt(np.maximum(arrays["variance"], 1e-10))
+            else:
+                self._vol_path = np.full_like(self.path_data, self.valuation_sigma)
         else:
             self.path_data = np.asarray(path_data, dtype=float)
-            self.path_dict = {"S": self.path_data}
-        if "sigma" in self.path_dict:
-            self._vol_path = self.path_dict["sigma"]
-        elif "variance" in self.path_dict:
-            self._vol_path = np.sqrt(np.maximum(self.path_dict["variance"], 1e-10))
-        else:
             self._vol_path = np.full_like(self.path_data, self.valuation_sigma)
         # Reference vol for state normalization: σ_0 of the process actually
         # used to generate this path. Decoupled from `valuation_sigma` (which

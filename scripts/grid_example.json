@@ -1,0 +1,10 @@
+{
+    "base_config": "config.json",
+    "parallel_workers": 4,
+    "paths_cache_dir": "outputs/_paths_cache",
+    "grid": {
+        "run.agent":                        ["DeepDPG", "QRDDPG"],
+        "hedging_agent.cvar_alpha":         [0.90, 0.95, 0.99],
+        "run.seed":                         [42, 43, 44]
+    }
+}

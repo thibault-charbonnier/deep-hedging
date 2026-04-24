@@ -57,6 +57,42 @@ def build_run_id(tag: str = "main") -> str:
     return f"{ts}_{safe_tag}_{short}"
 
 
+def cvar(values, alpha: float = 0.95) -> float:
+    """Empirical CVaR at level ``alpha`` for a cost distribution.
+
+    Returns the mean of the observations greater than or equal to the
+    ``alpha``-quantile. For a cost series (higher = worse) this is the
+    average of the worst ``1 - alpha`` fraction of outcomes. Returns
+    NaN when no finite value is available.
+    """
+    arr = np.asarray(list(values), dtype=float)
+    finite = arr[np.isfinite(arr)]
+    if finite.size == 0:
+        return float("nan")
+    threshold = float(np.quantile(finite, alpha))
+    tail = finite[finite >= threshold]
+    if tail.size == 0:
+        return float("nan")
+    return float(tail.mean())
+
+
+def nanskewness(values) -> float:
+    """Population skewness (3rd standardised moment) ignoring NaNs.
+
+    Returns NaN if there are fewer than 3 finite values or if the
+    standard deviation is zero. Uses ``ddof=0``.
+    """
+    arr = np.asarray(list(values), dtype=float)
+    finite = arr[np.isfinite(arr)]
+    if finite.size < 3:
+        return float("nan")
+    mean = float(finite.mean())
+    std = float(finite.std(ddof=0))
+    if std == 0:
+        return float("nan")
+    return float(np.mean(((finite - mean) / std) ** 3))
+
+
 def set_global_seed(seed: int, deterministic_torch: bool = True) -> None:
     """Seed Python's ``random``, NumPy and (if available) PyTorch for reproducible runs."""
     random.seed(seed)
