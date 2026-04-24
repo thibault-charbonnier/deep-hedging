@@ -120,7 +120,10 @@ class Orchestrator:
         self.agent.set_train_mode()
         res = HedgingResult()
         step_count = 0
+        logger.info("Starting training for %d episodes...", self.train_episodes)
         for ep in range(self.train_episodes):
+            if (ep + 1) % max(1, self.train_episodes // 10) == 0:
+                logger.info("  Episode %d / %d", ep + 1, self.train_episodes)
             path = self._ep_path(self.training_paths, ep)
             state_init = self.env.setup_env(path)
             H0 = self.agent.act(state_init, eval_mode=False)

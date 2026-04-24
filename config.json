@@ -35,7 +35,7 @@
     },
     "training_schedule":
     {
-        "train_episodes": 20000,
+        "train_episodes": 50000,
         "eval_episodes": 5000,
         "update_frequency": 5
     },

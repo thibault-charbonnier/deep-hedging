@@ -114,10 +114,13 @@ def _resolve_runs(args: argparse.Namespace) -> tuple[list[Path], list[str]]:
         # After a grid, the runs we care about are the most recent matching the
         # process/agent/benchmark in the grid configs. Simplest: filter by
         # mtime on the run's meta.json, newer than manifest creation time.
-        manifest_time = float(Path(args.manifest).stat().st_mtime)
+        t_start = manifest.get("t_start", float(Path(args.manifest).stat().st_mtime))
         candidates = [p for p in OUTPUTS.iterdir() if p.is_dir() and not p.name.startswith("_")]
-        runs = [p for p in candidates if (p / "meta.json").exists() and (p / "meta.json").stat().st_mtime >= manifest_time - 5]
+        runs = [p for p in candidates if (p / "meta.json").exists() and (p / "meta.json").stat().st_mtime >= t_start - 5]
         runs.sort(key=lambda p: (p / "meta.json").stat().st_mtime)
+        # Also collect keys from scenarios so they appear as columns in the CSV.
+        scenario_keys = list({k for s in manifest.get("grid_spec", {}).get("scenarios") or [] for k in s})
+        grid_keys = scenario_keys + [k for k in grid_keys if k not in scenario_keys]
         return runs, grid_keys
 
     since = datetime.fromisoformat(args.since) if args.since else None

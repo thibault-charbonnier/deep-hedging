@@ -1,0 +1,13 @@
+{
+    "base_config": "config.json",
+    "parallel_workers": 4,
+    "scenarios": [
+        {"run.process": "GBM",  "run.benchmark": "BsDelta"},
+        {"run.process": "SABR", "run.benchmark": "SABRPractitionerDelta"},
+        {"run.process": "SVJ",  "run.benchmark": "BsDelta"}
+    ],
+    "grid": {
+        "run.rebalancing": [5, 3, 2, 1],
+        "run.maturity": [0.0833333, 0.25]
+    }
+}

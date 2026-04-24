@@ -6,17 +6,22 @@ Usage:
 Grid spec (JSON):
     {
         "base_config": "config.json",
+        "scenarios": [
+            {"run.process": "GBM",  "run.benchmark": "BsDelta"},
+            {"run.process": "SABR", "run.benchmark": "SABRPractitionerDelta"}
+        ],
         "grid": {
-            "run.agent":                ["DeepDPG", "QRDDPG"],
-            "hedging_agent.cvar_alpha": [0.90, 0.95, 0.99],
-            "run.seed":                 [42, 43, 44]
+            "run.rebalancing": [5, 3, 2, 1],
+            "run.maturity":    [0.0833333, 0.25]
         },
         "parallel_workers": 4,
         "paths_cache_dir": "outputs/_paths_cache"
     }
 
 Behaviour:
-- Cartesian product over all grid keys → one run per combination.
+- If `scenarios` is provided, the Cartesian product of `grid` is applied
+  to each scenario (fixed overrides), producing len(scenarios) * prod(grid)
+  total runs. Without `scenarios`, behaviour is unchanged.
 - Each run is `python main.py --config <tmp.json>` in a subprocess so the
   global random state / torch threading is isolated.
 - `paths_cache_dir` (if set) is written into each run's config so that
@@ -147,14 +152,19 @@ def main() -> None:
     base_cfg = json.loads(base_cfg_path.read_text(encoding="utf-8"))
 
     grid = grid_spec.get("grid", {})
-    if not grid:
-        raise ValueError("Grid spec must contain a non-empty 'grid' dict.")
+    scenarios = grid_spec.get("scenarios")
     workers = int(grid_spec.get("parallel_workers", 1))
     paths_cache_dir = grid_spec.get("paths_cache_dir")
     if paths_cache_dir is not None:
         paths_cache_dir = str((REPO_ROOT / paths_cache_dir).resolve())
 
-    combos = _cartesian(grid)
+    grid_combos = _cartesian(grid) if grid else [{}]
+    if scenarios:
+        combos = [{**scenario, **grid_combo} for scenario in scenarios for grid_combo in grid_combos]
+    else:
+        if not grid:
+            raise ValueError("Grid spec must contain a non-empty 'grid' dict (or 'scenarios').")
+        combos = grid_combos
     total = len(combos)
     print(f"[grid] {total} combinations, {workers} workers")
     if paths_cache_dir:
@@ -190,6 +200,7 @@ def main() -> None:
     # Dump a tiny manifest to help the aggregation step know which grid was run.
     manifest = {
         "grid_spec": grid_spec,
+        "t_start": t_start,
         "combos": combos,
         "results": [
             {"idx": r["idx"], "overrides": r["overrides"], "ok": r["ok"],
