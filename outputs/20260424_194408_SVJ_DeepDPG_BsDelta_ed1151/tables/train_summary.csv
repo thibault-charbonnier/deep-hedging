@@ -1,0 +1,2 @@
+split,episodes,mean_total_cost,std_total_cost,skew_total_cost,y_objective
+train,50000,63.21643234983747,71.13685760902571,1.5050741101003922,169.92171876337602

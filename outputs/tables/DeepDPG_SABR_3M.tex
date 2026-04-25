@@ -1,0 +1,26 @@
+\documentclass{article}
+\usepackage{booktabs}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{caption}
+\usepackage[table]{xcolor}
+\usepackage{makecell}
+\captionsetup[table]{labelformat=empty}
+\begin{document}
+
+\begin{table}[htbp]
+\centering
+\vspace{0.4em}
+\begin{tabular}{lrrrrrr}
+\hline
+ & \multicolumn{2}{c}{\textbf{Delta Hedging}} & \multicolumn{2}{c}{\textbf{RL Optimal Hedging}} & \textbf{Y(0)} \\
+\textbf{Rebal Freq} & \textbf{Mean Cost} & \textbf{S.D. Cost} & \textbf{Mean Cost} & \textbf{S.D. Cost} & \textbf{improvement} \\
+\hline
+\textbf{weekly} & 52.8\% & 43.6\% & 48.1\% & 46.6\% & 0.2\% \\
+\textbf{3 days} & 62.3\% & 37.6\% & 52.5\% & 42.4\% & 2.1\% \\
+\textbf{2 days} & 70.4\% & 34.7\% & 50.0\% & 41.4\% & 8.5\% \\
+\textbf{daily} & 89.6\% & 33.9\% & 54.6\% & 38.5\% & 19.9\% \\
+\hline
+\end{tabular}
+\end{table}
+
+\end{document}

@@ -1,0 +1,445 @@
+{
+  "grid_spec": {
+    "base_config": "config.json",
+    "parallel_workers": 4,
+    "scenarios": [
+      {
+        "run.process": "GBM",
+        "run.benchmark": "BsDelta"
+      },
+      {
+        "run.process": "SABR",
+        "run.benchmark": "SABRPractitionerDelta"
+      },
+      {
+        "run.process": "SVJ",
+        "run.benchmark": "BsDelta"
+      }
+    ],
+    "grid": {
+      "run.rebalancing": [
+        5,
+        3,
+        2,
+        1
+      ],
+      "run.maturity": [
+        0.0833333,
+        0.25
+      ]
+    }
+  },
+  "t_start": 1777049038.30367,
+  "combos": [
+    {
+      "run.process": "GBM",
+      "run.benchmark": "BsDelta",
+      "run.rebalancing": 5,
+      "run.maturity": 0.0833333
+    },
+    {
+      "run.process": "GBM",
+      "run.benchmark": "BsDelta",
+      "run.rebalancing": 5,
+      "run.maturity": 0.25
+    },
+    {
+      "run.process": "GBM",
+      "run.benchmark": "BsDelta",
+      "run.rebalancing": 3,
+      "run.maturity": 0.0833333
+    },
+    {
+      "run.process": "GBM",
+      "run.benchmark": "BsDelta",
+      "run.rebalancing": 3,
+      "run.maturity": 0.25
+    },
+    {
+      "run.process": "GBM",
+      "run.benchmark": "BsDelta",
+      "run.rebalancing": 2,
+      "run.maturity": 0.0833333
+    },
+    {
+      "run.process": "GBM",
+      "run.benchmark": "BsDelta",
+      "run.rebalancing": 2,
+      "run.maturity": 0.25
+    },
+    {
+      "run.process": "GBM",
+      "run.benchmark": "BsDelta",
+      "run.rebalancing": 1,
+      "run.maturity": 0.0833333
+    },
+    {
+      "run.process": "GBM",
+      "run.benchmark": "BsDelta",
+      "run.rebalancing": 1,
+      "run.maturity": 0.25
+    },
+    {
+      "run.process": "SABR",
+      "run.benchmark": "SABRPractitionerDelta",
+      "run.rebalancing": 5,
+      "run.maturity": 0.0833333
+    },
+    {
+      "run.process": "SABR",
+      "run.benchmark": "SABRPractitionerDelta",
+      "run.rebalancing": 5,
+      "run.maturity": 0.25
+    },
+    {
+      "run.process": "SABR",
+      "run.benchmark": "SABRPractitionerDelta",
+      "run.rebalancing": 3,
+      "run.maturity": 0.0833333
+    },
+    {
+      "run.process": "SABR",
+      "run.benchmark": "SABRPractitionerDelta",
+      "run.rebalancing": 3,
+      "run.maturity": 0.25
+    },
+    {
+      "run.process": "SABR",
+      "run.benchmark": "SABRPractitionerDelta",
+      "run.rebalancing": 2,
+      "run.maturity": 0.0833333
+    },
+    {
+      "run.process": "SABR",
+      "run.benchmark": "SABRPractitionerDelta",
+      "run.rebalancing": 2,
+      "run.maturity": 0.25
+    },
+    {
+      "run.process": "SABR",
+      "run.benchmark": "SABRPractitionerDelta",
+      "run.rebalancing": 1,
+      "run.maturity": 0.0833333
+    },
+    {
+      "run.process": "SABR",
+      "run.benchmark": "SABRPractitionerDelta",
+      "run.rebalancing": 1,
+      "run.maturity": 0.25
+    },
+    {
+      "run.process": "SVJ",
+      "run.benchmark": "BsDelta",
+      "run.rebalancing": 5,
+      "run.maturity": 0.0833333
+    },
+    {
+      "run.process": "SVJ",
+      "run.benchmark": "BsDelta",
+      "run.rebalancing": 5,
+      "run.maturity": 0.25
+    },
+    {
+      "run.process": "SVJ",
+      "run.benchmark": "BsDelta",
+      "run.rebalancing": 3,
+      "run.maturity": 0.0833333
+    },
+    {
+      "run.process": "SVJ",
+      "run.benchmark": "BsDelta",
+      "run.rebalancing": 3,
+      "run.maturity": 0.25
+    },
+    {
+      "run.process": "SVJ",
+      "run.benchmark": "BsDelta",
+      "run.rebalancing": 2,
+      "run.maturity": 0.0833333
+    },
+    {
+      "run.process": "SVJ",
+      "run.benchmark": "BsDelta",
+      "run.rebalancing": 2,
+      "run.maturity": 0.25
+    },
+    {
+      "run.process": "SVJ",
+      "run.benchmark": "BsDelta",
+      "run.rebalancing": 1,
+      "run.maturity": 0.0833333
+    },
+    {
+      "run.process": "SVJ",
+      "run.benchmark": "BsDelta",
+      "run.rebalancing": 1,
+      "run.maturity": 0.25
+    }
+  ],
+  "results": [
+    {
+      "idx": 1,
+      "overrides": {
+        "run.process": "GBM",
+        "run.benchmark": "BsDelta",
+        "run.rebalancing": 5,
+        "run.maturity": 0.0833333
+      },
+      "ok": true,
+      "elapsed_sec": 198.6
+    },
+    {
+      "idx": 2,
+      "overrides": {
+        "run.process": "GBM",
+        "run.benchmark": "BsDelta",
+        "run.rebalancing": 5,
+        "run.maturity": 0.25
+      },
+      "ok": true,
+      "elapsed_sec": 527.9
+    },
+    {
+      "idx": 3,
+      "overrides": {
+        "run.process": "GBM",
+        "run.benchmark": "BsDelta",
+        "run.rebalancing": 3,
+        "run.maturity": 0.0833333
+      },
+      "ok": true,
+      "elapsed_sec": 304.9
+    },
+    {
+      "idx": 4,
+      "overrides": {
+        "run.process": "GBM",
+        "run.benchmark": "BsDelta",
+        "run.rebalancing": 3,
+        "run.maturity": 0.25
+      },
+      "ok": true,
+      "elapsed_sec": 881.6
+    },
+    {
+      "idx": 5,
+      "overrides": {
+        "run.process": "GBM",
+        "run.benchmark": "BsDelta",
+        "run.rebalancing": 2,
+        "run.maturity": 0.0833333
+      },
+      "ok": true,
+      "elapsed_sec": 414.5
+    },
+    {
+      "idx": 6,
+      "overrides": {
+        "run.process": "GBM",
+        "run.benchmark": "BsDelta",
+        "run.rebalancing": 2,
+        "run.maturity": 0.25
+      },
+      "ok": true,
+      "elapsed_sec": 1436.7
+    },
+    {
+      "idx": 7,
+      "overrides": {
+        "run.process": "GBM",
+        "run.benchmark": "BsDelta",
+        "run.rebalancing": 1,
+        "run.maturity": 0.0833333
+      },
+      "ok": true,
+      "elapsed_sec": 973.8
+    },
+    {
+      "idx": 8,
+      "overrides": {
+        "run.process": "GBM",
+        "run.benchmark": "BsDelta",
+        "run.rebalancing": 1,
+        "run.maturity": 0.25
+      },
+      "ok": true,
+      "elapsed_sec": 2994.5
+    },
+    {
+      "idx": 9,
+      "overrides": {
+        "run.process": "SABR",
+        "run.benchmark": "SABRPractitionerDelta",
+        "run.rebalancing": 5,
+        "run.maturity": 0.0833333
+      },
+      "ok": true,
+      "elapsed_sec": 225.5
+    },
+    {
+      "idx": 10,
+      "overrides": {
+        "run.process": "SABR",
+        "run.benchmark": "SABRPractitionerDelta",
+        "run.rebalancing": 5,
+        "run.maturity": 0.25
+      },
+      "ok": true,
+      "elapsed_sec": 618.7
+    },
+    {
+      "idx": 11,
+      "overrides": {
+        "run.process": "SABR",
+        "run.benchmark": "SABRPractitionerDelta",
+        "run.rebalancing": 3,
+        "run.maturity": 0.0833333
+      },
+      "ok": true,
+      "elapsed_sec": 350.4
+    },
+    {
+      "idx": 12,
+      "overrides": {
+        "run.process": "SABR",
+        "run.benchmark": "SABRPractitionerDelta",
+        "run.rebalancing": 3,
+        "run.maturity": 0.25
+      },
+      "ok": true,
+      "elapsed_sec": 988.2
+    },
+    {
+      "idx": 13,
+      "overrides": {
+        "run.process": "SABR",
+        "run.benchmark": "SABRPractitionerDelta",
+        "run.rebalancing": 2,
+        "run.maturity": 0.0833333
+      },
+      "ok": true,
+      "elapsed_sec": 485.4
+    },
+    {
+      "idx": 14,
+      "overrides": {
+        "run.process": "SABR",
+        "run.benchmark": "SABRPractitionerDelta",
+        "run.rebalancing": 2,
+        "run.maturity": 0.25
+      },
+      "ok": true,
+      "elapsed_sec": 1517.7
+    },
+    {
+      "idx": 15,
+      "overrides": {
+        "run.process": "SABR",
+        "run.benchmark": "SABRPractitionerDelta",
+        "run.rebalancing": 1,
+        "run.maturity": 0.0833333
+      },
+      "ok": true,
+      "elapsed_sec": 1032.4
+    },
+    {
+      "idx": 16,
+      "overrides": {
+        "run.process": "SABR",
+        "run.benchmark": "SABRPractitionerDelta",
+        "run.rebalancing": 1,
+        "run.maturity": 0.25
+      },
+      "ok": true,
+      "elapsed_sec": 2894.7
+    },
+    {
+      "idx": 17,
+      "overrides": {
+        "run.process": "SVJ",
+        "run.benchmark": "BsDelta",
+        "run.rebalancing": 5,
+        "run.maturity": 0.0833333
+      },
+      "ok": true,
+      "elapsed_sec": 220.8
+    },
+    {
+      "idx": 18,
+      "overrides": {
+        "run.process": "SVJ",
+        "run.benchmark": "BsDelta",
+        "run.rebalancing": 5,
+        "run.maturity": 0.25
+      },
+      "ok": true,
+      "elapsed_sec": 612.1
+    },
+    {
+      "idx": 19,
+      "overrides": {
+        "run.process": "SVJ",
+        "run.benchmark": "BsDelta",
+        "run.rebalancing": 3,
+        "run.maturity": 0.0833333
+      },
+      "ok": true,
+      "elapsed_sec": 355.2
+    },
+    {
+      "idx": 20,
+      "overrides": {
+        "run.process": "SVJ",
+        "run.benchmark": "BsDelta",
+        "run.rebalancing": 3,
+        "run.maturity": 0.25
+      },
+      "ok": true,
+      "elapsed_sec": 982.7
+    },
+    {
+      "idx": 21,
+      "overrides": {
+        "run.process": "SVJ",
+        "run.benchmark": "BsDelta",
+        "run.rebalancing": 2,
+        "run.maturity": 0.0833333
+      },
+      "ok": true,
+      "elapsed_sec": 485.6
+    },
+    {
+      "idx": 22,
+      "overrides": {
+        "run.process": "SVJ",
+        "run.benchmark": "BsDelta",
+        "run.rebalancing": 2,
+        "run.maturity": 0.25
+      },
+      "ok": true,
+      "elapsed_sec": 1464.8
+    },
+    {
+      "idx": 23,
+      "overrides": {
+        "run.process": "SVJ",
+        "run.benchmark": "BsDelta",
+        "run.rebalancing": 1,
+        "run.maturity": 0.0833333
+      },
+      "ok": true,
+      "elapsed_sec": 976.4
+    },
+    {
+      "idx": 24,
+      "overrides": {
+        "run.process": "SVJ",
+        "run.benchmark": "BsDelta",
+        "run.rebalancing": 1,
+        "run.maturity": 0.25
+      },
+      "ok": true,
+      "elapsed_sec": 2611.6
+    }
+  ]
+}
