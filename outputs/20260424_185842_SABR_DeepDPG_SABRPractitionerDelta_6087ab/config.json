@@ -1,0 +1,69 @@
+{
+  "simulation": {
+    "maturity": 0.0833333,
+    "S0": 100.0,
+    "gbm": {
+      "mu": 0.05,
+      "sigma": 0.2
+    },
+    "sabr": {
+      "mu": 0.05,
+      "sigma0": 0.2,
+      "nu": 0.6,
+      "rho": -0.4
+    },
+    "svj": {
+      "mu": 0.05,
+      "v0": 0.04,
+      "kappa": 1.0,
+      "theta": 0.04,
+      "xi": 0.5,
+      "rho": -0.5,
+      "jump_intensity": 1.0,
+      "jump_mean": -0.02,
+      "jump_std": 0.05
+    },
+    "n_steps": 4
+  },
+  "hedging_env": {
+    "position_sign": -1.0,
+    "transaction_cost": 0.01
+  },
+  "training_schedule": {
+    "train_episodes": 50000,
+    "eval_episodes": 5000,
+    "update_frequency": 5
+  },
+  "hedging_agent": {
+    "exploration_rate_start": 1.0,
+    "exploration_rate_end": 0.0,
+    "exploration_rate_decay": 0.99995,
+    "actor_learning_rate": 0.0001,
+    "critic_learning_rate": 0.001,
+    "discount_factor": 1.0,
+    "learning_batch_size": 128,
+    "replay_capacity": 200000,
+    "min_buffer_size": 1024,
+    "target_update_freq": 100,
+    "risk_lambda": 1.5,
+    "n_quantiles": 51,
+    "cvar_alpha": 0.95,
+    "huber_kappa": 1.0,
+    "actor_objective": "mean_variance",
+    "action_low": 0.0,
+    "action_high": 1.0
+  },
+  "derivative": {
+    "strike": 100.0,
+    "rf_rate": 0.0,
+    "div_rate": 0.0
+  },
+  "run": {
+    "maturity": 0.0833333,
+    "rebalancing": 5,
+    "process": "SABR",
+    "agent": "DeepDPG",
+    "benchmark": "SABRPractitionerDelta",
+    "seed": 42
+  }
+}

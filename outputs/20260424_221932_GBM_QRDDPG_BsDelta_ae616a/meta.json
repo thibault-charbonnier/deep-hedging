@@ -1,0 +1,8 @@
+{
+  "run_id": "20260424_221932_GBM_QRDDPG_BsDelta_ae616a",
+  "script": "GBM_QRDDPG_BsDelta",
+  "timestamp": "2026-04-24T22:19:32",
+  "python": "3.11.3 (tags/v3.11.3:f3909b8, Apr  4 2023, 23:49:59) [MSC v.1934 64 bit (AMD64)]",
+  "platform": "Windows-10-10.0.26200-SP0",
+  "seed": 42
+}

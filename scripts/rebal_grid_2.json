@@ -1,0 +1,12 @@
+{
+    "base_config": "config.json",
+    "parallel_workers": 4,
+    "scenarios": [
+        {"run.process": "GBM",  "run.benchmark": "BsDelta"}
+    ],
+    "grid": {
+        "run.agent": ["QRDDPG"],
+        "hedging.agent.actor_objective": ["mean_variance", "cvar"],
+        "run.rebalancing": [5, 3, 2, 1]
+    }
+}
