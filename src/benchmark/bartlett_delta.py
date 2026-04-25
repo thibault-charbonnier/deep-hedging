@@ -1,11 +1,5 @@
 """
-Bartlett delta under SABR — Bartlett (2006), Paper Section 5.
-
-"Bartlett provides a better estimate of delta for the SABR model by
- considering both the impact of a change in S and the corresponding
- expected change in σ."
-
-Δ_Bartlett = Δ_BS(σ_impl) + vega_BS · ρ ν / S
+Bartlett delta under SABR
 """
 from __future__ import annotations
 

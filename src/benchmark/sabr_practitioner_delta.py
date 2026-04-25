@@ -1,12 +1,5 @@
 """
-Practitioner delta under SABR — Paper Section 5.
-
-"A popular hedging procedure involves using a delta calculated by
- assuming the Black-Scholes model with σ set equal to the current
- implied volatility."
-
-At each step, we compute the SABR implied vol from the current σ_t,
-then compute the BS delta with that implied vol.
+Practitioner delta under SABR
 """
 from __future__ import annotations
 

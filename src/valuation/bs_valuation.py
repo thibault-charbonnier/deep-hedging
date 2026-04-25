@@ -14,13 +14,7 @@ class BSValuation:
         self.phi = 1.0 if self.option_type == "call" else -1.0
 
     def price_and_delta(self, spot, t, sigma):
-        """Return ``(price, delta)`` at ``(spot, t, sigma)``.
-
-        Fully vectorised (inputs can be scalars or ndarrays of matching
-        shape). At maturity (``t >= T``) the payoff and payoff delta are
-        returned directly instead of the BS formula. Call/put branches
-        are collapsed via ``phi = +1`` (call) or ``-1`` (put).
-        """
+        """Return ``(price, delta)`` at ``(spot, t, sigma)``"""
         S = np.asarray(spot, dtype=float)
         tau_raw = np.maximum(self.T - np.asarray(t, dtype=float), 0.0)
         sigma_arr = np.maximum(np.asarray(sigma, dtype=float), 1e-12)
@@ -45,12 +39,7 @@ class BSValuation:
 
 
 def option_price_t0(config: dict) -> float:
-    """Return the absolute Black-Scholes price of the option at t=0 from a config dict.
-
-    Uses the GBM sigma as the pricing volatility regardless of the
-    simulation process. The returned value is used as a normalisation
-    scale for reported costs across the pipeline.
-    """
+    """Return the absolute Black-Scholes price of the option at t=0 from a config dict."""
     maturity = float(config["simulation"]["maturity"])
     spot = float(config["simulation"]["S0"])
     sigma = float(config["simulation"]["gbm"]["sigma"])

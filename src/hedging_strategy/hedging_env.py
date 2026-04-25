@@ -1,18 +1,6 @@
 """
-Accounting P&L hedging environment — Cao et al. (2021), Section 3.1.
-
-R_{i+1} = V_{i+1} - V_i + H_i(S_{i+1}-S_i) - κ|S_{i+1}(H_{i+1}-H_i)|
-Initial cost: -κ|S_0 H_0|      (paper convention)
-Final cost:   -κ|S_n H_n|
-
-At the terminal step we force H_n = 0 so the transaction cost at t = T is
-exactly the liquidation κ·S_n·|H_{n-1}|, matching the paper's "final reward
-= -κ|S_n H_n|" without double-billing (a separate rebalance to H_n and then
-a liquidation from H_n to 0).
-
-State (dim 4) = [holding, log(S/K), TTM/T, σ_t/σ_ref]
+Accounting P&L hedging environment
 """
-from __future__ import annotations
 from typing import Any
 import math
 import numpy as np
@@ -21,11 +9,6 @@ from ..valuation.bs_valuation import BSValuation
 
 class HedgingEnv:
     """Accounting-P&L hedging environment used for training and evaluation.
-
-    Holds a single path at a time and exposes a ``gym``-style ``step``
-    that returns the per-step reward, cost and next state. Forces
-    liquidation at the terminal step so the final transaction cost is
-    exactly ``kappa * S_n * |H_{n-1}|``.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -42,10 +25,6 @@ class HedgingEnv:
 
     def setup_env(self, path_data):
         """Prepare the env for a new path and return the initial state.
-
-        Accepts either a raw spot array or a ``{"S": ..., "sigma"/"variance": ...}``
-        dict. Pre-computes the option value along the path and resets
-        the time index and previous hedge.
         """
         if isinstance(path_data, dict):
             arrays = {k: np.asarray(v, dtype=float) for k, v in path_data.items()}
@@ -59,10 +38,6 @@ class HedgingEnv:
         else:
             self.path_data = np.asarray(path_data, dtype=float)
             self._vol_path = np.full_like(self.path_data, self.valuation_sigma)
-        # Reference vol for state normalization: σ_0 of the process actually
-        # used to generate this path. Decoupled from `valuation_sigma` (which
-        # is tied to the BS pricing kernel) so that scale stays consistent
-        # across processes even if σ_0 ≠ gbm.sigma.
         self.sigma_ref = float(self._vol_path[0])
         self.n_steps = len(self.path_data) - 1
         self.times = np.linspace(0.0, self.maturity, len(self.path_data))
@@ -88,14 +63,6 @@ class HedgingEnv:
 
     def step(self, hedge: float):
         """Apply a rebalancing action, return (next_state, reward, done, info).
-
-        Paper Section 3.1 Accounting P&L:
-            R_{i+1} = V_{i+1} - V_i + H_i(S_{i+1} - S_i) - κ|S_{i+1}(H_{i+1} - H_i)|
-
-        At the terminal step (i = n-1) we force H_n = 0, so the transaction
-        cost is κ·S_n·|H_{n-1}|, which IS the paper's final liquidation cost.
-        The caller is expected to pass hedge = 0.0 at the terminal step
-        anyway (see orchestrator).
         """
         i = self.i
         done = (i == self.n_steps - 1)
