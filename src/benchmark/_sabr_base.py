@@ -5,12 +5,6 @@ import numpy as np
 
 
 class _SABRDeltaBase:
-    """Common init, state decomposition and terminal payoff handling for SABR delta benchmarks.
-
-    Subclasses implement ``_compute_delta(spot, ttm, sigma_t)`` for the
-    non-terminal case; the terminal payoff delta (``phi`` at ITM, 0 at
-    OTM) is handled here via the ``phi = +1`` (call) / ``-1`` (put) sign.
-    """
 
     def __init__(self, config: dict) -> None:
         self.position_sign = float(config["hedging_env"]["position_sign"])

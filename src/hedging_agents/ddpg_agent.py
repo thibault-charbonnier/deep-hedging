@@ -1,20 +1,6 @@
 """
-Deep DPG with dual critics — Cao et al. (2021) Sections 2.6, 3.4, 4.
-
-Paper-aligned design choices:
-  - critic_1 → E[C_t],  critic_2 → E[C_t²]
-  - actor minimises F = Q1 + λ √(Q2 - Q1²)
-  - ε-greedy exploration (Section 2.6):
-      "With probability ε, a random action is taken, and with
-       probability 1−ε the policy function is followed."
-  - Periodic hard copy of target networks (Section 2.5):
-      "deep Q-learning keeps a separate copy of the Q-function for
-       constructing the update target, and only updates this copy
-       periodically."
-  - Prioritized Experience Replay (Section 4)
-  - IS weights on critic losses
+Deep DPG with dual critics
 """
-from __future__ import annotations
 from typing import Any
 
 import numpy as np

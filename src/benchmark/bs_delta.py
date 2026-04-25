@@ -1,5 +1,4 @@
-"""BS delta benchmark (constant σ) — used under GBM."""
-from __future__ import annotations
+"""BS delta benchmark used under GBM."""
 import numpy as np
 from ..valuation.bs_valuation import BSValuation
 

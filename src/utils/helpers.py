@@ -9,7 +9,7 @@ import pandas as pd
 
 try:
     import torch
-except Exception:  # pragma: no cover - torch may be unavailable in some environments
+except Exception:
     torch = None
 
 

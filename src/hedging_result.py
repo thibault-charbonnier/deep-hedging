@@ -51,14 +51,7 @@ class EpisodeResult:
         self.agent_infos.append({} if agent_info is None else agent_info)
 
     def step_frame(self) -> pd.DataFrame:
-        """Return a long-format DataFrame with one row per recorded step.
-
-        The first row is the setup step: its ``*`` and ``*_next`` values
-        are both taken at t=0 (no transition yet). For i >= 1, row i
-        pairs values at index ``i-1`` (current) with index ``i`` (next).
-        Extra path fields (``sigma``, ``variance``) are included when
-        present.
-        """
+        """Return a long-format DataFrame with one row per recorded step."""
         n_steps = len(self.actions)
 
         def _pair(series: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -146,12 +139,7 @@ class HedgingResult:
         return pd.DataFrame(rows)
 
     def split_summary(self, split: SplitType | None = None, risk_lambda: float = 1.5) -> pd.DataFrame:
-        """Aggregate per-split stats of ``total_cost`` across episodes.
-
-        For each split: episode count, mean, std (ddof=0), skew, and the
-        mean-variance objective ``Y = mean + risk_lambda * std`` used as
-        the main comparison metric.
-        """
+        """Aggregate per-split stats of ``total_cost`` across episodes."""
         ep = self.episode_table(split=split)
         if ep.empty:
             return pd.DataFrame()

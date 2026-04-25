@@ -1,36 +1,7 @@
 """
 QR-DDPG — Distributional Deep DPG with quantile regression.
-
-Instead of learning the expectation Q(s,a) = E[return | s, a] as a scalar,
-the critic predicts the FULL DISTRIBUTION of the return via N quantile
-values:
-    θ_i(s, a) ≈ F⁻¹_{return | s,a}(τ_i)   with τ_i = (i - 0.5)/N, i=1..N
-
-Training: quantile Huber regression (Dabney et al. 2018, QR-DQN).
-    L = Σ_i  E_j [ ρ_κ^{τ_i}(y_j − θ_i) ]
-    ρ_κ^τ(u) = |τ − 1_{u<0}| · Huber_κ(u)
-    Huber_κ(u) = 0.5·u²            if |u|≤κ
-               = κ(|u| − 0.5κ)     else
-y_j = r + γ·(1−done)·θ_j(s', π_target(s'))  — target quantiles.
-
-Actor objective — selected via ``hedging_agent.actor_objective``:
-
-  - ``"cvar"`` (default): minimise CVaR_α of the predicted cost
-    distribution (= average of the upper-tail quantiles). Single,
-    financially interpretable risk metric — standard in Basel /
-    Solvency II frameworks.
-
-  - ``"mean_variance"``: minimise ``E[C] + risk_lambda · std[C]``,
-    estimated from the quantile grid. Same objective shape as the
-    Cao et al. (2021) DDPG baseline — directly comparable.
-
-Keeps ε-greedy exploration and PER from the DDPG baseline so the
-infra stays identical.
 """
-from __future__ import annotations
-
 from typing import Any
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -91,11 +62,6 @@ class QRDeepDPGHedgingAgent(PERActorCriticAgent):
 
     def _actor_loss_from_quantiles(self, q_pred: torch.Tensor) -> torch.Tensor:
         """Scalar actor objective per sample, derived from the predicted cost quantiles ``[B, N]``.
-
-        ``cvar``: average of the quantiles whose fraction lies in the
-        upper tail (mask selected at ``cvar_alpha``).
-        ``mean_variance``: empirical ``mean + risk_lambda * std`` over
-        the quantile grid, using ``ddof=0`` to match the DDPG baseline.
         """
         if self.actor_objective == "cvar":
             return (q_pred * self.cvar_mask).sum(dim=-1) / self.cvar_mask.sum()
@@ -119,12 +85,6 @@ class QRDeepDPGHedgingAgent(PERActorCriticAgent):
 
     def learn(self) -> float | None:
         """Run one gradient update on the quantile critic and the risk actor.
-
-        Critic: quantile Huber regression against the bootstrapped
-        target quantiles ``y = r + gamma * (1 - done) * theta(s', pi_target(s'))``.
-        Actor: minimises the scalar risk objective selected by
-        ``actor_objective`` (``"cvar"`` or ``"mean_variance"``) derived
-        from the predicted cost quantiles.
         """
         if self._replay_size() < self.min_buffer:
             return None
@@ -137,20 +97,14 @@ class QRDeepDPGHedgingAgent(PERActorCriticAgent):
         dones = batch["dones"]
         w = batch["weights"]
 
-        # COST convention: learn the quantiles of the COST distribution
-        # (C = −R) so that "upper tail = worst" and CVaR = expected worst loss.
         cost = -rewards
-
-        # ── Target quantiles ─────────────────────────────────────────
         with torch.no_grad():
             next_a = self.actor_target(next_states)
-            next_q = self.critic_target(next_states, next_a)  # [B, N]
+            next_q = self.critic_target(next_states, next_a)
             nd = (1.0 - dones).unsqueeze(-1)
-            y = cost.unsqueeze(-1) + self.gamma * nd * next_q  # [B, N]
+            y = cost.unsqueeze(-1) + self.gamma * nd * next_q
 
-        # ── Critic update (quantile Huber regression) ────────────────
         current_q = self.critic(states, actions)  # [B, N]
-        # td_errors: target_j − current_i → shape [B, N_current, N_target]
         td = y.unsqueeze(1) - current_q.unsqueeze(2)
         loss_per_sample = self._huber_quantile_loss(td)  # [B]
         loss_c = (w * loss_per_sample).mean()
@@ -159,15 +113,13 @@ class QRDeepDPGHedgingAgent(PERActorCriticAgent):
         loss_c.backward()
         self.critic_opt.step()
 
-        # PER priorities: mean |TD| across the quantile grid.
         prios = td.detach().abs().mean(dim=(1, 2)).cpu().numpy().reshape(-1)
         prios = np.abs(prios) + self.per_eps
         self._update_priorities(batch["indexes"], prios)
 
-        # ── Actor update (risk objective over the predicted cost distribution) ───
         self._freeze_critics()
         aa = self.actor(states)
-        q_pred = self.critic(states, aa)  # [B, N] — predicted cost quantiles
+        q_pred = self.critic(states, aa)
         actor_loss = self._actor_loss_from_quantiles(q_pred).mean()
 
         self.actor_opt.zero_grad()

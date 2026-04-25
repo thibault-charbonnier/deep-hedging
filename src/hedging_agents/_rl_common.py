@@ -21,15 +21,7 @@ import torch.nn as nn
 from cpprb import PrioritizedReplayBuffer
 
 from .abstract_agent import AbstractHedgingAgent
-
-
-# Single source of truth for the torch device used by every network in the
-# project. For this workload (small step-wise tensors), CPU is faster than the
-# MPS transfer overhead.
 DEVICE = torch.device("cpu")
-
-
-# ── Networks ─────────────────────────────────────────────────────────
 
 class MLP(nn.Module):
     """Standard fully-connected ReLU MLP with an optional output activation."""
@@ -50,7 +42,6 @@ class MLP(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Run the stacked Linear/ReLU layers on ``x``."""
         return self.net(x)
-
 
 class CriticMLP(nn.Module):
     """Scalar critic ``Q(s, a)`` implemented as an MLP on the concatenated (s, a) vector."""
@@ -99,28 +90,13 @@ class DeterministicActor(nn.Module):
         half = 0.5 * (self.a_hi - self.a_lo)
         return mid + half * self.backbone(s)
 
-
-# ── Target network updates ──────────────────────────────────────────
-
-
 def hard_update(target: nn.Module, source: nn.Module) -> None:
     """Copy every parameter from ``source`` into ``target`` (periodic hard target update)."""
     target.load_state_dict(source.state_dict())
 
 
-# ── PER + ε-greedy base class ──────────────────────────────────────
-
-
 class PERActorCriticAgent(AbstractHedgingAgent):
     """Base class for DDPG-style agents (deterministic actor + PER buffer + ε-greedy).
-
-    Handles: config parsing, actor networks, PER replay buffer,
-    epsilon-greedy exploration, target-network periodic hard copies,
-    and the train/eval mode toggle. Subclasses only need to:
-
-      - build their critic network(s) and optimiser(s) in ``__init__``
-      - override ``_networks``, ``_critic_nets``, ``_sync_targets``
-      - implement ``learn``
     """
 
     def __init__(self, agent_cfg: dict[str, Any]) -> None:
@@ -178,8 +154,6 @@ class PERActorCriticAgent(AbstractHedgingAgent):
 
         self.train_mode_enabled = True
         self.learn_steps = 0
-
-    # ── Helpers ──────────────────────────────────────────────────────
 
     def _st(self, state) -> torch.Tensor:
         """Convert a numpy state to a ``[1, state_dim]`` tensor on the agent device."""
